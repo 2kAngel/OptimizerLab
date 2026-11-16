@@ -1,0 +1,1503 @@
+import React, { useState, useEffect } from 'react'
+import { Viewer3D } from './components/viewer3d/Viewer3D'
+import { ParetoChart, ParetoPoint } from './components/optimization/ParetoChart'
+
+interface HealthInfo {
+  status: string
+  service: string
+  version: string
+  modules_registered: number
+}
+
+interface ModuleInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  author: string
+}
+
+interface Project {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+}
+
+interface Candidate {
+  id: string
+  generation: number
+  index: number
+  parameters: Record<string, any>
+  geometry_hash: string
+  status: string
+  evaluations: Array<{
+    id: string
+    fidelity: string
+    solver: string
+    status: string
+    metrics: Record<string, number>
+    time: number
+  }>
+}
+
+type ScaleType = 'domestic' | 'medium' | 'large'
+
+export interface SavedTopDesign {
+  id: string
+  code: string
+  title: string
+  familyId: string
+  familyName: string
+  scale: ScaleType
+  scaleLabel: string
+  candidate: Candidate
+  metrics: Record<string, number>
+  parameters: Record<string, any>
+  geometryHash: string
+  savedAt: string
+}
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<'lab' | 'comparator'>('lab')
+  const [health, setHealth] = useState<HealthInfo | null>(null)
+  const [modules, setModules] = useState<ModuleInfo[]>([])
+  const [selectedModuleId, setSelectedModuleId] = useState<string>('wind_turbines')
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string>('spherical_vawt')
+  const [selectedScale, setSelectedScale] = useState<ScaleType>('domestic')
+
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [newProjectName, setNewProjectName] = useState('')
+  const [newProjectDesc, setNewProjectDesc] = useState('')
+  const [activeExpId, setActiveExpId] = useState<string>('')
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [optimizing, setOptimizing] = useState(false)
+  const [logMessage, setLogMessage] = useState<string>('Listo para interactuar con DesignLab API.')
+
+  // Control de optimización NSGA-II
+  const [optAttempts, setOptAttempts] = useState(60)
+  const [randomSeed, setRandomSeed] = useState(true)
+  const [manualSeed, setManualSeed] = useState(42)
+
+  // Banco de Diseños Top Guardados (Persistencia en localStorage)
+  const [savedTops, setSavedTops] = useState<SavedTopDesign[]>(() => {
+    try {
+      const raw = localStorage.getItem('designlab_saved_tops')
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+
+  // Selectores para el duelo Versus (A vs B)
+  const [vsAId, setVsAId] = useState<string>('')
+  const [vsBId, setVsBId] = useState<string>('')
+
+  // Parámetros HAWT Clásico (Tipo Iberdrola)
+  const [hawtDiameter, setHawtDiameter] = useState(1800)
+  const [hawtTowerHeight, setHawtTowerHeight] = useState(3000)
+  const [hawtBlades, setHawtBlades] = useState(2)
+  const [hawtPitch, setHawtPitch] = useState(5.0)
+
+  // Parámetros Savonius VAWT
+  const [savDiameter, setSavDiameter] = useState(800)
+  const [savHeight, setSavHeight] = useState(1200)
+  const [savBlades, setSavBlades] = useState(2)
+  const [savOverlap, setSavOverlap] = useState(0.18)
+
+  // Parámetros Turbina Esférica
+  const [sphereDiameter, setSphereDiameter] = useState(1000)
+  const [sphereBlades, setSphereBlades] = useState(6)
+
+  // Viento común
+  const [windSpeed, setWindSpeed] = useState(8.5)
+
+  // Guardar en localStorage cuando cambie savedTops
+  useEffect(() => {
+    try {
+      localStorage.setItem('designlab_saved_tops', JSON.stringify(savedTops))
+    } catch (e) {
+      console.warn(e)
+    }
+    if (savedTops.length >= 2) {
+      if (!vsAId) setVsAId(savedTops[0].id)
+      if (!vsBId) setVsBId(savedTops[1].id)
+    }
+  }, [savedTops])
+
+  // Cambiar escala preestablecida
+  const handleScaleChange = (scale: ScaleType) => {
+    setSelectedScale(scale)
+    if (scale === 'domestic') {
+      setHawtDiameter(1800)
+      setHawtTowerHeight(3000)
+      setSavDiameter(800)
+      setSavHeight(1200)
+      setSphereDiameter(1000)
+      setWindSpeed(7.5)
+    } else if (scale === 'medium') {
+      setHawtDiameter(6000)
+      setHawtTowerHeight(10000)
+      setSavDiameter(2200)
+      setSavHeight(3500)
+      setSphereDiameter(2400)
+      setWindSpeed(8.5)
+    } else {
+      // large scale (tipo Iberdrola monte / parque eólico)
+      setHawtDiameter(35000)
+      setHawtTowerHeight(50000)
+      setSavDiameter(5000)
+      setSavHeight(10000)
+      setSphereDiameter(6000)
+      setWindSpeed(10.5)
+    }
+  }
+
+  useEffect(() => {
+    fetchHealth()
+    fetchModules()
+    fetchProjects()
+  }, [])
+
+  useEffect(() => {
+    if (activeExpId) {
+      fetchCandidates(activeExpId)
+    }
+  }, [activeExpId])
+
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch('/api/health')
+      if (res.ok) setHealth(await res.json())
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchModules = async () => {
+    try {
+      const res = await fetch('/api/modules')
+      if (res.ok) {
+        const data: ModuleInfo[] = await res.json()
+        setModules(data)
+        if (data.some((m) => m.id === 'wind_turbines')) {
+          setSelectedModuleId('wind_turbines')
+        } else if (data.length > 0) {
+          setSelectedModuleId(data[0].id)
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch('/api/projects')
+      if (res.ok) {
+        const data = await res.json()
+        setProjects(data)
+        if (data.length > 0 && !selectedProjectId) {
+          setSelectedProjectId(data[0].id)
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchCandidates = async (expId: string, autoSelectNewest = false) => {
+    try {
+      const res = await fetch(`/api/experiments/${expId}/candidates`)
+      if (res.ok) {
+        const data: Candidate[] = await res.json()
+        setCandidates(data)
+        if (data.length > 0) {
+          if (autoSelectNewest || !selectedCandidate) {
+            setSelectedCandidate(data[data.length - 1])
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newProjectName.trim()) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newProjectName, description: newProjectDesc }),
+      })
+      if (res.ok) {
+        const proj = await res.json()
+        setNewProjectName('')
+        setNewProjectDesc('')
+        setLogMessage(`Proyecto "${proj.name}" creado con éxito (ID: ${proj.id})`)
+        await fetchProjects()
+        setSelectedProjectId(proj.id)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteProject = async () => {
+    if (!selectedProjectId) return
+    if (!confirm('¿Seguro que deseas eliminar este proyecto y todos sus experimentos?')) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setLogMessage('Proyecto eliminado correctamente.')
+        await fetchProjects()
+        setSelectedProjectId('')
+        setCandidates([])
+        setSelectedCandidate(null)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getActiveParameters = () => {
+    if (selectedFamilyId === 'hawt_conventional') {
+      return {
+        rotor_diameter: Number(hawtDiameter),
+        blade_count: Number(hawtBlades),
+        root_chord: Math.max(100.0, hawtDiameter * 0.075),
+        pitch_angle: Number(hawtPitch),
+        tower_height: Number(hawtTowerHeight),
+      }
+    } else if (selectedFamilyId === 'spherical_vawt') {
+      return {
+        rotor_diameter: Number(sphereDiameter),
+        blade_count: Number(sphereBlades),
+        blade_thickness: Math.max(3.0, sphereDiameter * 0.0035),
+        curvature_twist: 45.0,
+      }
+    } else {
+      // savonius
+      return {
+        rotor_diameter: Number(savDiameter),
+        rotor_height: Number(savHeight),
+        blade_count: Number(savBlades),
+        overlap_ratio: Number(savOverlap),
+        blade_thickness: Math.max(3.0, savDiameter * 0.003),
+        shaft_diameter: Math.max(30.0, savDiameter * 0.035),
+      }
+    }
+  }
+
+  const generateTopCode = (cand: Candidate, famId?: string, sc?: ScaleType) => {
+    const fam = famId || selectedFamilyId
+    const currentScale = sc || selectedScale
+    const scaleCode = currentScale === 'domestic' ? 'DOM' : currentScale === 'medium' ? 'MED' : 'GRAN'
+    let typeCode = 'ESFR'
+    let bladesCode = '6AL'
+    let dimCode = '1000D'
+
+    const p = cand.parameters || {}
+    if (fam === 'hawt_conventional') {
+      typeCode = 'HAWT'
+      bladesCode = `${p.blade_count || 3}P`
+      dimCode = `${Math.round(p.rotor_diameter || 1800)}D`
+    } else if (fam === 'savonius_vawt') {
+      typeCode = 'SAVO'
+      bladesCode = `${p.blade_count || 2}P`
+      dimCode = `${Math.round(p.rotor_diameter || 800)}D`
+    } else {
+      typeCode = 'ESFR'
+      bladesCode = `${p.blade_count || 6}AL`
+      dimCode = `${Math.round(p.rotor_diameter || 1000)}D`
+    }
+
+    return `TOP-${scaleCode}-${typeCode}-${bladesCode}-${dimCode}`
+  }
+
+  const handleSaveAsTop = (cand: Candidate) => {
+    const code = generateTopCode(cand, selectedFamilyId, selectedScale)
+    const eval1 = cand.evaluations[0]
+    const m = eval1?.metrics || {}
+    const p = cand.parameters || {}
+
+    const scaleLabel = selectedScale === 'domestic' ? 'Doméstico' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'
+    const familyName = selectedFamilyId === 'hawt_conventional' ? 'HAWT Clásico (Molino)' : selectedFamilyId === 'savonius_vawt' ? 'Savonius VAWT (Arrastre)' : 'Turbina Esférica (Omnidireccional)'
+
+    const newTop: SavedTopDesign = {
+      id: `${code}-${Date.now().toString().slice(-4)}`,
+      code: code,
+      title: `${code} — ${familyName} (${scaleLabel})`,
+      familyId: selectedFamilyId,
+      familyName: familyName,
+      scale: selectedScale,
+      scaleLabel: scaleLabel,
+      candidate: cand,
+      metrics: m,
+      parameters: p,
+      geometryHash: cand.geometry_hash,
+      savedAt: new Date().toLocaleTimeString(),
+    }
+
+    setSavedTops((prev) => {
+      const filtered = prev.filter((t) => t.code !== code)
+      return [newTop, ...filtered]
+    })
+
+    setLogMessage(`⭐ ¡Diseño guardado exitosamente como Benchmark: "${code}"! Puedes compararlo en la pestaña de Tops.`)
+  }
+
+  const handleDeleteTop = (id: string) => {
+    setSavedTops((prev) => prev.filter((t) => t.id !== id))
+    setLogMessage('Diseño Top eliminado del banco.')
+  }
+
+  const handleLoadTopInViewer = (top: SavedTopDesign) => {
+    setSelectedCandidate(top.candidate)
+    setSelectedFamilyId(top.familyId)
+    setSelectedScale(top.scale)
+    setActiveTab('lab')
+    setLogMessage(`Cargado en el Visor 3D el diseño Top: ${top.code}`)
+  }
+
+  const handleGenerateAndEvaluate = async () => {
+    if (!selectedProjectId) {
+      alert('Seleccione o cree un proyecto primero')
+      return
+    }
+    setLoading(true)
+    const familyName = selectedFamilyId === 'hawt_conventional' ? `HAWT (${hawtBlades} Palas)` : selectedFamilyId === 'spherical_vawt' ? 'Esférica' : `Savonius (${savBlades} Palas)`
+    setLogMessage(`Generando modelo 3D para ${familyName}...`)
+
+    try {
+      const familyId = selectedFamilyId
+      const parameters = getActiveParameters()
+      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225 }
+
+      const scaleLabel = selectedScale === 'domestic' ? 'Doméstico' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'
+      const expName = `${familyName} — ${scaleLabel} (v=${windSpeed} m/s)`
+
+      const expRes = await fetch('/api/experiments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: selectedProjectId,
+          name: expName,
+          module_id: selectedModuleId,
+          family_id: familyId,
+          configuration: operatingConditions,
+        }),
+      })
+      const exp = await expRes.json()
+      setActiveExpId(exp.id)
+
+      const jobGenRes = await fetch(`/api/experiments/${exp.id}/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_type: 'GENERATE_CANDIDATE',
+          payload: {
+            experiment_id: exp.id,
+            module_id: selectedModuleId,
+            family_id: familyId,
+            parameters: parameters,
+          },
+        }),
+      })
+      const jobGen = await jobGenRes.json()
+
+      const procGenRes = await fetch(`/api/jobs/${jobGen.id}/process`, { method: 'POST' })
+      const procGen = await procGenRes.json()
+      const candidateId = procGen.result.candidate_id
+
+      const jobEvalRes = await fetch(`/api/experiments/${exp.id}/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_type: 'EVALUATE_CANDIDATE',
+          payload: {
+            candidate_id: candidateId,
+            module_id: selectedModuleId,
+            family_id: familyId,
+            parameters: parameters,
+            operating_conditions: operatingConditions,
+          },
+        }),
+      })
+      const jobEval = await jobEvalRes.json()
+      await fetch(`/api/jobs/${jobEval.id}/process`, { method: 'POST' })
+
+      setLogMessage(`¡Diseño generado y evaluado con éxito! Se cargó automáticamente en el Visor 3D.`)
+      await fetchCandidates(exp.id, true)
+    } catch (err: any) {
+      console.error(err)
+      setLogMessage(`Error al generar diseño: ${err.message || 'Error de conexión con el backend'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRunOptimization = async () => {
+    if (!selectedProjectId) {
+      alert('Seleccione o cree un proyecto primero')
+      return
+    }
+    setOptimizing(true)
+    const scaleLabel = selectedScale === 'domestic' ? 'Doméstico' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'
+
+    const popSize = optAttempts <= 30 ? 10 : optAttempts <= 70 ? 15 : 20
+    const nGen = Math.max(2, Math.round(optAttempts / popSize))
+    const totalRuns = popSize * nGen
+    const effectiveSeed = randomSeed ? Math.floor(Math.random() * 1000000) : manualSeed
+
+    setLogMessage(`Iniciando Algoritmo Genético NSGA-II (${scaleLabel}): Evaluando ${totalRuns} variantes (Población: ${popSize}, Gen: ${nGen}, Semilla: ${effectiveSeed})...`)
+
+    try {
+      const familyId = selectedFamilyId
+      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225 }
+
+      const expRes = await fetch('/api/experiments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: selectedProjectId,
+          name: `Optimización NSGA-II — ${selectedFamilyId} (${totalRuns} intentos, ${scaleLabel})`,
+          module_id: selectedModuleId,
+          family_id: familyId,
+          configuration: operatingConditions,
+        }),
+      })
+      const exp = await expRes.json()
+      setActiveExpId(exp.id)
+
+      const optJobRes = await fetch(`/api/experiments/${exp.id}/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pop_size: popSize,
+          n_gen: nGen,
+          seed: effectiveSeed,
+        }),
+      })
+      const optJob = await optJobRes.json()
+
+      const procRes = await fetch(`/api/jobs/${optJob.id}/process`, { method: 'POST' })
+      const procData = await procRes.json()
+
+      const paretoCount = procData.result?.pareto_count || 0
+      setLogMessage(`Optimización completada: se evaluaron ${totalRuns} variantes y se descubrieron ${paretoCount} diseños óptimos en el Frente de Pareto (Semilla: ${effectiveSeed}).`)
+      await fetchCandidates(exp.id, true)
+    } catch (err: any) {
+      console.error(err)
+      setLogMessage(`Error en optimización: ${err.message || 'Error de conexión con el backend'}`)
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  const paretoPoints: ParetoPoint[] = candidates
+    .filter((c) => c.evaluations.length > 0 && c.evaluations[0].metrics)
+    .map((c) => {
+      const m = c.evaluations[0].metrics
+      const power = m.power_output !== undefined ? m.power_output : 100.0
+      const mass = m.rotor_mass !== undefined ? m.rotor_mass : 1.0
+      const torque = m.starting_torque || 0.0
+
+      return {
+        id: c.id,
+        index: c.index,
+        generation: c.generation,
+        power: Number(power.toFixed(2)),
+        mass: Number(mass.toFixed(2)),
+        torque: Number(torque.toFixed(2)),
+        isPareto: false,
+        candidate: c,
+      }
+    })
+
+  for (let i = 0; i < paretoPoints.length; i++) {
+    let isDominated = false
+    for (let j = 0; j < paretoPoints.length; j++) {
+      if (i !== j) {
+        if (
+          paretoPoints[j].power >= paretoPoints[i].power &&
+          paretoPoints[j].mass <= paretoPoints[i].mass &&
+          (paretoPoints[j].power > paretoPoints[i].power || paretoPoints[j].mass < paretoPoints[i].mass)
+        ) {
+          isDominated = true
+          break
+        }
+      }
+    }
+    paretoPoints[i].isPareto = !isDominated
+  }
+
+  const formatPower = (w: number) => {
+    if (w >= 1000000) return `${(w / 1000000).toFixed(2)} MW`
+    if (w >= 1000) return `${(w / 1000).toFixed(2)} kW`
+    return `${w.toFixed(1)} W`
+  }
+
+  const formatMass = (kg: number) => {
+    if (kg >= 1000) return `${(kg / 1000).toFixed(2)} t`
+    return `${kg.toFixed(1)} kg`
+  }
+
+  const activeGeometryHash = selectedCandidate?.geometry_hash || ''
+  const selectedMetrics = selectedCandidate?.evaluations?.[0]?.metrics
+  const selectedDiameter = selectedCandidate?.parameters?.rotor_diameter || (selectedFamilyId === 'hawt_conventional' ? hawtDiameter : selectedFamilyId === 'spherical_vawt' ? sphereDiameter : savDiameter)
+
+  // Diseños seleccionados para el duelo Versus
+  const designA = savedTops.find((t) => t.id === vsAId) || savedTops[0]
+  const designB = savedTops.find((t) => t.id === vsBId) || savedTops[1]
+
+  return (
+    <div style={{ maxWidth: 1440, margin: '0 auto', padding: '20px 16px', color: '#f8fafc' }}>
+      {/* Header */}
+      <header style={{ borderBottom: '1px solid #334155', paddingBottom: 16, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#38bdf8' }}>DESIGNLAB</h1>
+            <span style={{ fontSize: 11, background: '#0369a1', color: '#e0f2fe', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>v0.2.0 Benchmarking</span>
+          </div>
+          <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: 13 }}>Laboratorio Eólico Multiescala con Comparativa Cruzada y Referencias Físicas</p>
+        </div>
+
+        {/* Pestañas Principales */}
+        <div style={{ display: 'flex', gap: 8, background: '#0f172a', padding: 4, borderRadius: 8, border: '1px solid #334155' }}>
+          <button
+            onClick={() => setActiveTab('lab')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 6,
+              border: 'none',
+              background: activeTab === 'lab' ? '#0284c7' : 'transparent',
+              color: activeTab === 'lab' ? '#fff' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            🔬 Laboratorio & NSGA-II
+          </button>
+          <button
+            onClick={() => setActiveTab('comparator')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 6,
+              border: 'none',
+              background: activeTab === 'comparator' ? '#d97706' : 'transparent',
+              color: activeTab === 'comparator' ? '#fff' : '#94a3b8',
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            🏆 Comparador de Tops ({savedTops.length})
+          </button>
+        </div>
+
+        <div style={{ textAlign: 'right', fontSize: 12 }}>
+          <span style={{ padding: '4px 10px', borderRadius: 999, background: health?.status === 'healthy' ? '#064e3b' : '#7f1d1d', color: health?.status === 'healthy' ? '#6ee7b7' : '#fca5a5' }}>
+            Backend: {health?.status === 'healthy' ? 'ONLINE (WAL)' : 'OFFLINE'}
+          </span>
+          <div style={{ color: '#64748b', marginTop: 4 }}>3 Escalas | Multi-Arquitectura</div>
+        </div>
+      </header>
+
+      {/* CONTENIDO SEGÚN PESTAÑA */}
+      {activeTab === 'lab' ? (
+        /* VISTA 1: LABORATORIO DE DISEÑO & OPTIMIZACIÓN */
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 24 }}>
+          {/* Columna Izquierda: Configuración y Banco de Tops */}
+          <div>
+            {/* Selector de Módulo de Ingeniería */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #334155' }}>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#f8fafc' }}>Módulo de Ingeniería</h3>
+              <select
+                value={selectedModuleId}
+                onChange={(e) => setSelectedModuleId(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #475569', marginBottom: 8 }}
+              >
+                {modules.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>
+                {modules.find((m) => m.id === selectedModuleId)?.description}
+              </p>
+            </div>
+
+            {/* Selector de Arquitectura */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #38bdf8' }}>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#38bdf8' }}>Arquitectura Aerodinámica</h3>
+              <select
+                value={selectedFamilyId}
+                onChange={(e) => setSelectedFamilyId(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #0284c7', fontWeight: 600, marginBottom: 8 }}
+              >
+                <option value="spherical_vawt">🌐 Turbina Esférica (Omnidireccional)</option>
+                <option value="hawt_conventional">🌬️ HAWT Clásico (Molino 2 o 3 Palas)</option>
+                <option value="savonius_vawt">🔄 Savonius (Eje Vertical - Arrastre)</option>
+              </select>
+            </div>
+
+            {/* Selector de Escala de Aplicación */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #10b981' }}>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#10b981' }}>Escala de Aplicación</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => handleScaleChange('domestic')}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    textAlign: 'left',
+                    background: selectedScale === 'domestic' ? '#064e3b' : '#0f172a',
+                    color: selectedScale === 'domestic' ? '#6ee7b7' : '#94a3b8',
+                    border: selectedScale === 'domestic' ? '1px solid #10b981' : '1px solid #334155',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: selectedScale === 'domestic' ? 600 : 400,
+                  }}
+                >
+                  🏠 <strong>Doméstico</strong> (Casas, azoteas, huertos)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleScaleChange('medium')}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    textAlign: 'left',
+                    background: selectedScale === 'medium' ? '#064e3b' : '#0f172a',
+                    color: selectedScale === 'medium' ? '#6ee7b7' : '#94a3b8',
+                    border: selectedScale === 'medium' ? '1px solid #10b981' : '1px solid #334155',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: selectedScale === 'medium' ? 600 : 400,
+                  }}
+                >
+                  🏢 <strong>Mediano</strong> (Naves, polideportivos, parques)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleScaleChange('large')}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    textAlign: 'left',
+                    background: selectedScale === 'large' ? '#064e3b' : '#0f172a',
+                    color: selectedScale === 'large' ? '#6ee7b7' : '#94a3b8',
+                    border: selectedScale === 'large' ? '1px solid #10b981' : '1px solid #334155',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: selectedScale === 'large' ? 600 : 400,
+                  }}
+                >
+                  ⛰️ <strong>Gran Escala</strong> (Empresas, montes, Iberdrola)
+                </button>
+              </div>
+            </div>
+
+            {/* Banco de Tops Guardados */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #f59e0b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 13, color: '#f59e0b' }}>🏆 Tops Guardados ({savedTops.length})</h3>
+                {savedTops.length > 0 && (
+                  <button
+                    onClick={() => setActiveTab('comparator')}
+                    style={{ fontSize: 11, background: '#78350f', color: '#fde68a', border: '1px solid #b45309', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' }}
+                  >
+                    Comparar →
+                  </button>
+                )}
+              </div>
+
+              {savedTops.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>
+                  Aún no has guardado diseños Top. Selecciona cualquier diseño y pulsa <strong>"⭐ Guardar como Top"</strong>.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                  {savedTops.map((top) => (
+                    <div
+                      key={top.id}
+                      style={{
+                        background: '#0f172a',
+                        borderRadius: 6,
+                        padding: '6px 8px',
+                        border: '1px solid #334155',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8' }}>{top.code}</div>
+                        <div style={{ fontSize: 10, color: '#94a3b8' }}>
+                          ⚡ {formatPower(top.metrics.power_output || 0)} | ⚖️ {formatMass(top.metrics.rotor_mass || 0)}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          onClick={() => handleLoadTopInViewer(top)}
+                          title="Cargar en Visor 3D"
+                          style={{ background: '#0284c7', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer' }}
+                        >
+                          3D
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTop(top.id)}
+                          title="Eliminar"
+                          style={{ background: '#7f1d1d', color: '#fca5a5', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Proyectos */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #334155' }}>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#f8fafc' }}>Proyectos</h3>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                <select
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                  style={{ flex: 1, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #475569' }}
+                >
+                  {projects.length === 0 && <option value="">Sin proyectos</option>}
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {selectedProjectId && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteProject}
+                    title="Eliminar proyecto"
+                    style={{ padding: '0 10px', borderRadius: 6, background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', cursor: 'pointer', fontSize: 13 }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleCreateProject}>
+                <input
+                  type="text"
+                  placeholder="Nuevo proyecto..."
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #475569', marginBottom: 8 }}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !newProjectName.trim()}
+                  style={{ width: '100%', padding: '8px', borderRadius: 6, background: '#0284c7', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  + Crear Proyecto
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* Columna Derecha: Laboratorio de Diseño, Visor 3D y Gráficos */}
+          <div>
+            {/* Panel de Configuración Paramétrica */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, marginBottom: 20, border: '1px solid #334155' }}>
+              <div style={{ marginBottom: 16 }}>
+                <h2 style={{ margin: 0, fontSize: 18, color: '#f8fafc' }}>
+                  {selectedFamilyId === 'hawt_conventional' && `Molino HAWT — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala (Iberdrola)'}`}
+                  {selectedFamilyId === 'savonius_vawt' && `Rotor Savonius — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedFamilyId === 'spherical_vawt' && `Turbina Esférica — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                </h2>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                  {selectedScale === 'domestic' && 'Diámetro de 1 a 2m | Potencia esperada: 300W - 1.5kW'}
+                  {selectedScale === 'medium' && 'Diámetro de 4 a 8m | Potencia esperada: 5kW - 30kW'}
+                  {selectedScale === 'large' && 'Diámetro de 20 a 50m | Potencia esperada: 100kW - 2MW+'}
+                </span>
+              </div>
+
+              {/* Barra de Configuración de Optimización Evolutiva */}
+              <div style={{ background: '#0f172a', borderRadius: 8, padding: '12px 16px', marginBottom: 18, border: '1px solid #d97706', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ⚡ Optimización NSGA-II
+                  </span>
+
+                  {/* Input de número de intentos */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <label style={{ fontSize: 12, color: '#94a3b8' }}>Nº de Intentos:</label>
+                    <input
+                      type="number"
+                      min={10}
+                      max={200}
+                      step={10}
+                      value={optAttempts}
+                      onChange={(e) => setOptAttempts(Math.max(10, Math.min(200, Number(e.target.value))))}
+                      style={{ width: 68, padding: '5px 8px', borderRadius: 6, background: '#1e293b', color: '#fff', border: '1px solid #475569', fontSize: 12, fontWeight: 700, textAlign: 'center' }}
+                    />
+                  </div>
+
+                  {/* Presets rápidos */}
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[30, 60, 120].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setOptAttempts(n)}
+                        style={{
+                          padding: '4px 9px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          background: optAttempts === n ? '#d97706' : '#1e293b',
+                          color: optAttempts === n ? '#fff' : '#94a3b8',
+                          border: optAttempts === n ? '1px solid #f59e0b' : '1px solid #334155',
+                          cursor: 'pointer',
+                          fontWeight: optAttempts === n ? 700 : 400,
+                        }}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Modo de semilla */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={randomSeed}
+                      onChange={(e) => setRandomSeed(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>🎲 Exploración Libre (Diseños Nuevos)</span>
+                  </label>
+
+                  {!randomSeed && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Semilla:</span>
+                      <input
+                        type="number"
+                        value={manualSeed}
+                        onChange={(e) => setManualSeed(Number(e.target.value))}
+                        style={{ width: 60, padding: '4px 6px', borderRadius: 4, background: '#1e293b', color: '#fff', border: '1px solid #475569', fontSize: 11 }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleRunOptimization}
+                  disabled={optimizing || loading || !selectedProjectId}
+                  style={{
+                    padding: '9px 20px',
+                    borderRadius: 6,
+                    background: '#f59e0b',
+                    color: '#0f172a',
+                    border: 'none',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    boxShadow: '0 2px 8px rgba(245, 158, 11, 0.35)',
+                  }}
+                >
+                  {optimizing ? `⏳ Evaluando ${optAttempts} variantes...` : `🚀 Optimizar (${optAttempts} Intentos)`}
+                </button>
+              </div>
+
+              {/* Formulario según familia */}
+              {selectedFamilyId === 'hawt_conventional' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Diámetro D (mm)</label>
+                    <input type="number" value={hawtDiameter} onChange={(e) => setHawtDiameter(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Altura Torre (mm)</label>
+                    <input type="number" value={hawtTowerHeight} onChange={(e) => setHawtTowerHeight(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Número de Palas</label>
+                    <select value={hawtBlades} onChange={(e) => setHawtBlades(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569', fontWeight: 600 }}>
+                      <option value={2}>2 Palas (Opuestas 180°)</option>
+                      <option value={3}>3 Palas (Iberdrola 120°)</option>
+                      <option value={4}>4 Palas (Cruceta 90°)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Pitch (°)</label>
+                    <input type="number" step="0.5" value={hawtPitch} onChange={(e) => setHawtPitch(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Viento v (m/s)</label>
+                    <input type="number" step="0.5" value={windSpeed} onChange={(e) => setWindSpeed(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                </div>
+              )}
+
+              {selectedFamilyId === 'savonius_vawt' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Diámetro D (mm)</label>
+                    <input type="number" value={savDiameter} onChange={(e) => setSavDiameter(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Altura H (mm)</label>
+                    <input type="number" value={savHeight} onChange={(e) => setSavHeight(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Palas</label>
+                    <select value={savBlades} onChange={(e) => setSavBlades(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }}>
+                      <option value={2}>2 Palas (Mayor Cp)</option>
+                      <option value={3}>3 Palas (Par suave)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Solapamiento (s/d)</label>
+                    <input type="number" step="0.01" value={savOverlap} onChange={(e) => setSavOverlap(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Viento v (m/s)</label>
+                    <input type="number" step="0.5" value={windSpeed} onChange={(e) => setWindSpeed(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                </div>
+              )}
+
+              {selectedFamilyId === 'spherical_vawt' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Diámetro Esférico D (mm)</label>
+                    <input type="number" value={sphereDiameter} onChange={(e) => setSphereDiameter(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Álabes Meridianos</label>
+                    <input type="number" value={sphereBlades} onChange={(e) => setSphereBlades(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Viento v (m/s)</label>
+                    <input type="number" step="0.5" value={windSpeed} onChange={(e) => setWindSpeed(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleGenerateAndEvaluate}
+                disabled={loading || optimizing || !selectedProjectId}
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: 6,
+                  background: '#10b981',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                {loading ? 'Generando Geometría 3D...' : `▶ Diseñar Turbina (${selectedFamilyId === 'hawt_conventional' ? `${hawtBlades} Palas` : selectedFamilyId === 'spherical_vawt' ? `${sphereBlades} Álabes` : `${savBlades} Palas`}) & Evaluar`}
+              </button>
+            </div>
+
+            {/* Gráfico del Frente de Pareto */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, marginBottom: 20, border: '1px solid #334155' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 16, color: '#f8fafc' }}>
+                  Comparativa Multi-Objetivo: Frente de Pareto ({paretoPoints.filter((p) => p.isPareto).length} Óptimos)
+                </h3>
+                {selectedCandidate && (
+                  <button
+                    onClick={() => handleSaveAsTop(selectedCandidate)}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: 6,
+                      background: '#d97706',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: 600,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    ⭐ Guardar {generateTopCode(selectedCandidate)} en Tops
+                  </button>
+                )}
+              </div>
+              <p style={{ margin: '0 0 14px 0', fontSize: 12, color: '#94a3b8' }}>
+                Compara la <strong>Potencia Mecánica</strong> frente a la <strong>Masa del Conjunto</strong>. Haz clic en los puntos verdes para cargar cualquier diseño en el Visor 3D.
+              </p>
+              <ParetoChart
+                points={paretoPoints}
+                selectedId={selectedCandidate?.id || null}
+                onSelectCandidate={(cand) => setSelectedCandidate(cand)}
+              />
+            </div>
+
+            {/* Visor 3D Interactivo con Referencia Humana y HUD */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, marginBottom: 20, border: '1px solid #334155' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, color: '#f8fafc' }}>
+                    Visor 3D — {selectedCandidate?.parameters?.blade_count ? `${selectedCandidate.parameters.blade_count} Palas / Álabes` : ''} {selectedCandidate ? `(Candidato #${selectedCandidate.index})` : ''}
+                  </h3>
+                  <span style={{ fontSize: 12, color: '#38bdf8', fontWeight: 600 }}>
+                    {selectedCandidate ? generateTopCode(selectedCandidate) : ''}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {selectedCandidate && (
+                    <button
+                      onClick={() => handleSaveAsTop(selectedCandidate)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        background: '#f59e0b',
+                        color: '#0f172a',
+                        border: 'none',
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      ⭐ Guardar como Top
+                    </button>
+                  )}
+                  {selectedCandidate && (
+                    <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#94a3b8' }}>
+                      SHA: {selectedCandidate.geometry_hash.slice(0, 10)}...
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <Viewer3D
+                geometryHash={activeGeometryHash}
+                parameters={selectedCandidate?.parameters}
+                metrics={selectedMetrics}
+                familyId={selectedFamilyId}
+              />
+            </div>
+
+            {/* Panel de Análisis Físico-Estructural: ¿Por qué difieren los resultados? */}
+            {selectedCandidate && (
+              <div style={{ background: '#0f172a', borderRadius: 8, padding: 18, marginBottom: 20, border: '1px solid #38bdf8' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  🔍 Desglose Físico: ¿Qué diferencias estructurales explican este rendimiento?
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12 }}>
+                  <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                    <div style={{ color: '#94a3b8', marginBottom: 4 }}>🌀 Área Frontal Barrida ($A$)</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981' }}>
+                      {(Math.PI * Math.pow((selectedDiameter / 1000) / 2, 2)).toFixed(2)} m²
+                    </div>
+                    <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                      La potencia eólica escala con el <strong>cuadrado del diámetro ($D^2$)</strong>. Un rotor de 2.5m captura <strong>39 veces más viento</strong> que uno de 0.4m.
+                    </p>
+                  </div>
+
+                  <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                    <div style={{ color: '#94a3b8', marginBottom: 4 }}>⚙️ Brazo de Palanca & Par Motor</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#f59e0b' }}>
+                      Radio R = {(selectedDiameter / 2000).toFixed(2)} m
+                    </div>
+                    <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                      El par de arranque ($T = F \times R$) escala de forma <strong>cúbica ($D^3$)</strong>. A mayor radio, mayor palanca para autoarrancar con vientos suaves.
+                    </p>
+                  </div>
+
+                  <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                    <div style={{ color: '#94a3b8', marginBottom: 4 }}>⚖️ Densidad de Potencia Específica</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#a855f7' }}>
+                      {selectedMetrics?.power_output && selectedMetrics?.rotor_mass
+                        ? `${(selectedMetrics.power_output / selectedMetrics.rotor_mass).toFixed(2)} W/kg`
+                        : 'Calculando...'}
+                    </div>
+                    <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                      Relación vatios generados por kilogramo de material. Permite comparar la eficiencia del uso de masa entre arquitecturas.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Estado / Log */}
+            <div style={{ background: '#020617', padding: '10px 14px', borderRadius: 6, border: '1px solid #1e293b', marginBottom: 20, fontFamily: 'monospace', fontSize: 12, color: '#38bdf8' }}>
+              &gt; {logMessage}
+            </div>
+
+            {/* Candidatos Evaluados */}
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, border: '1px solid #334155' }}>
+              <h3 style={{ margin: '0 0 14px 0', fontSize: 16, color: '#f8fafc' }}>
+                Historial de Diseños ({candidates.length}) — Haz clic para cargar en el Visor 3D
+              </h3>
+              {candidates.length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: 13 }}>No hay diseños aún en este experimento. Ajuste los parámetros arriba o presione "🚀 Optimizar con NSGA-II".</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto' }}>
+                  {candidates.map((c) => {
+                    const eval1 = c.evaluations[0]
+                    const isSelected = selectedCandidate?.id === c.id
+                    const m = eval1?.metrics || {}
+
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => setSelectedCandidate(c)}
+                        style={{
+                          background: isSelected ? '#1e3a5f' : '#0f172a',
+                          borderRadius: 6,
+                          padding: 12,
+                          border: isSelected ? '1px solid #38bdf8' : '1px solid #334155',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontWeight: 600, color: '#f8fafc', fontSize: 13 }}>
+                            Candidato #{c.index} (Gen {c.generation}) — {c.parameters.blade_count || 3} Palas {isSelected && '👈 En Visor 3D'}
+                          </span>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 600 }}>{generateTopCode(c)}</span>
+                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#1e293b', color: '#94a3b8', fontFamily: 'monospace' }}>
+                              Hash: {c.geometry_hash?.slice(0, 8)}...
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                          {c.parameters.tower_height ? (
+                            <span>HAWT | D={Math.round(c.parameters.rotor_diameter)}mm, Torre={Math.round(c.parameters.tower_height)}mm, <strong>{c.parameters.blade_count} Palas</strong>, Pitch={c.parameters.pitch_angle}°</span>
+                          ) : c.parameters.curvature_twist ? (
+                            <span>Turbina Esférica | D={Math.round(c.parameters.rotor_diameter)}mm, {c.parameters.blade_count} Álabes</span>
+                          ) : (
+                            <span>Savonius VAWT | D={Math.round(c.parameters.rotor_diameter)}mm, H={Math.round(c.parameters.rotor_height)}mm, {c.parameters.blade_count} Palas</span>
+                          )}
+                        </div>
+
+                        {eval1 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, background: '#1e293b', padding: 8, borderRadius: 6 }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#64748b' }}>Potencia Mecánica</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#10b981' }}>{formatPower(m.power_output || 0)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#64748b' }}>Rendimiento Cp</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#38bdf8' }}>{m.power_coefficient}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#64748b' }}>Par Arranque</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>{m.starting_torque} N·m</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#64748b' }}>Masa Conjunto</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#f43f5e' }}>{formatMass(m.rotor_mass || 0)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#64748b' }}>RPM Nominal</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>{m.nominal_rpm || m.cut_in_wind_speed}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* VISTA 2: COMPARADOR DE TIPOLOGÍAS TOP */
+        <div style={{ background: '#1e293b', borderRadius: 8, padding: 24, border: '1px solid #334155' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 20, color: '#f59e0b' }}>
+                🏆 Comparativa Multi-Arquitectura: Mejores Diseños Guardados
+              </h2>
+              <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: 13 }}>
+                Contrasta directamente los modelos Top de cada tipología (Esférica vs HAWT Clásico vs Savonius) para tomar decisiones de diseño informadas.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveTab('lab')}
+              style={{ padding: '8px 16px', borderRadius: 6, background: '#0284c7', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+            >
+              ← Volver al Laboratorio
+            </button>
+          </div>
+
+          {savedTops.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 20px', background: '#0f172a', borderRadius: 8, border: '1px dashed #475569' }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>🏆</div>
+              <h3 style={{ margin: '0 0 8px 0', color: '#f8fafc' }}>Aún no hay diseños Top guardados</h3>
+              <p style={{ color: '#94a3b8', maxWidth: 500, margin: '0 auto 20px auto', fontSize: 13 }}>
+                Ve al Laboratorio, genera o optimiza cualquier arquitectura y pulsa el botón <strong>"⭐ Guardar como Top"</strong> para añadirlo a esta comparativa.
+              </p>
+              <button
+                onClick={() => setActiveTab('lab')}
+                style={{ padding: '10px 20px', borderRadius: 6, background: '#10b981', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Ir a Diseñar y Guardar
+              </button>
+            </div>
+          ) : (
+            <div>
+              {/* TABLA COMPARATIVA MULTICRITERIO */}
+              <div style={{ overflowX: 'auto', marginBottom: 32 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#0f172a', borderBottom: '2px solid #38bdf8' }}>
+                      <th style={{ padding: '12px 14px', color: '#94a3b8' }}>Parámetro / Métrica</th>
+                      {savedTops.map((top) => (
+                        <th key={top.id} style={{ padding: '12px 14px', color: '#38bdf8', minWidth: 200 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700 }}>{top.code}</div>
+                          <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400 }}>{top.familyName}</div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#cbd5e1' }}>Escala de Aplicación</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px' }}>
+                          <span style={{ padding: '2px 8px', borderRadius: 4, background: '#0f172a', border: '1px solid #334155', fontSize: 11 }}>
+                            {t.scaleLabel}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155', background: '#0f172a55' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#cbd5e1' }}>Diámetro Rotor D</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px', fontWeight: 700, color: '#fff' }}>
+                          {t.parameters.rotor_diameter} mm ({(t.parameters.rotor_diameter / 1000).toFixed(2)} m)
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#cbd5e1' }}>Palas / Álabes</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px' }}>
+                          {t.parameters.blade_count || 3} {t.familyId === 'spherical_vawt' ? 'Álabes Meridianos' : 'Palas'}
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155', background: '#064e3b22' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 700, color: '#10b981' }}>⚡ Potencia Mecánica (P)</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px', fontSize: 15, fontWeight: 700, color: '#10b981' }}>
+                          {formatPower(t.metrics.power_output || 0)}
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#38bdf8' }}>Rendimiento Aerodinámico (Cp)</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px', fontWeight: 700, color: '#38bdf8' }}>
+                          {t.metrics.power_coefficient} {t.metrics.power_coefficient >= 0.4 ? '🔥 (Máx. sustentación)' : ''}
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155', background: '#0f172a55' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#cbd5e1' }}>⚖️ Masa del Rotor</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px', fontWeight: 700, color: '#f43f5e' }}>
+                          {formatMass(t.metrics.rotor_mass || 0)}
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#cbd5e1' }}>Densidad de Potencia (W/kg)</td>
+                      {savedTops.map((t) => {
+                        const w = t.metrics.power_output || 0
+                        const m = t.metrics.rotor_mass || 1
+                        return (
+                          <td key={t.id} style={{ padding: '10px 14px', fontWeight: 700, color: '#a855f7' }}>
+                            {(w / m).toFixed(2)} W/kg
+                          </td>
+                        )
+                      })}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155', background: '#78350f22' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 700, color: '#f59e0b' }}>Par de Arranque Estático</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px', fontWeight: 700, color: '#f59e0b' }}>
+                          {t.metrics.starting_torque} N·m
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#cbd5e1' }}>Direccionalidad del Viento</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px', fontSize: 12 }}>
+                          {t.familyId === 'spherical_vawt' ? '🌐 100% Omnidireccional (360°)' : t.familyId === 'savonius_vawt' ? '🔄 Omnidireccional en plano XY' : '🌬️ Requiere veleta / orientación'}
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr style={{ borderBottom: '1px solid #334155', background: '#0f172a55' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#cbd5e1' }}>Comportamiento Acústico</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '10px 14px', fontSize: 12 }}>
+                          {t.familyId === 'spherical_vawt' ? '🔇 Silencioso (flujo helicoidal)' : t.familyId === 'savonius_vawt' ? '🔇 Ultra silencioso (bajas rpm)' : '⚠️ Ruido aerodinámico punta de pala'}
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr>
+                      <td style={{ padding: '12px 14px', fontWeight: 600, color: '#cbd5e1' }}>Acciones</td>
+                      {savedTops.map((t) => (
+                        <td key={t.id} style={{ padding: '12px 14px' }}>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              onClick={() => handleLoadTopInViewer(t)}
+                              style={{ padding: '6px 10px', borderRadius: 4, background: '#0284c7', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                            >
+                              👁️ Ver en 3D
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTop(t.id)}
+                              style={{ padding: '6px 10px', borderRadius: 4, background: '#7f1d1d', color: '#fca5a5', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* MODO DUELO DIRECTO VERSUS (A vs B) */}
+              {savedTops.length >= 2 && designA && designB && (
+                <div style={{ background: '#0f172a', borderRadius: 8, padding: 20, border: '1px solid #f59e0b' }}>
+                  <h3 style={{ margin: '0 0 16px 0', fontSize: 16, color: '#f59e0b' }}>
+                    ⚔️ Duelo Directo: {designA.code} VS {designB.code}
+                  </h3>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+                    <div>
+                      <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Seleccionar Diseño A:</label>
+                      <select
+                        value={vsAId}
+                        onChange={(e) => setVsAId(e.target.value)}
+                        style={{ width: '100%', padding: '8px', borderRadius: 6, background: '#1e293b', color: '#38bdf8', border: '1px solid #0284c7', fontWeight: 600 }}
+                      >
+                        {savedTops.map((t) => (
+                          <option key={t.id} value={t.id}>{t.code} ({t.familyName})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Seleccionar Diseño B:</label>
+                      <select
+                        value={vsBId}
+                        onChange={(e) => setVsBId(e.target.value)}
+                        style={{ width: '100%', padding: '8px', borderRadius: 6, background: '#1e293b', color: '#f59e0b', border: '1px solid #d97706', fontWeight: 600 }}
+                      >
+                        {savedTops.map((t) => (
+                          <option key={t.id} value={t.id}>{t.code} ({t.familyName})</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Comparación Porcentual */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+                    <div style={{ background: '#1e293b', padding: 14, borderRadius: 6, textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Potencia Mecánica</div>
+                      <div style={{ fontSize: 14, color: '#38bdf8', fontWeight: 700 }}>A: {formatPower(designA.metrics.power_output || 0)}</div>
+                      <div style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>B: {formatPower(designB.metrics.power_output || 0)}</div>
+                      <div style={{ fontSize: 11, marginTop: 6, color: '#10b981', fontWeight: 600 }}>
+                        {designA.metrics.power_output && designB.metrics.power_output
+                          ? `Diferencia: ${(((designA.metrics.power_output - designB.metrics.power_output) / designB.metrics.power_output) * 100).toFixed(1)}%`
+                          : ''}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#1e293b', padding: 14, borderRadius: 6, textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Eficiencia Aerodinámica (Cp)</div>
+                      <div style={{ fontSize: 14, color: '#38bdf8', fontWeight: 700 }}>A: {designA.metrics.power_coefficient}</div>
+                      <div style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>B: {designB.metrics.power_coefficient}</div>
+                      <div style={{ fontSize: 11, marginTop: 6, color: '#38bdf8', fontWeight: 600 }}>
+                        {designA.metrics.power_coefficient > designB.metrics.power_coefficient ? `A es ${(designA.metrics.power_coefficient / designB.metrics.power_coefficient).toFixed(2)}x más eficiente` : `B es ${(designB.metrics.power_coefficient / designA.metrics.power_coefficient).toFixed(2)}x más eficiente`}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#1e293b', padding: 14, borderRadius: 6, textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Masa del Rotor</div>
+                      <div style={{ fontSize: 14, color: '#38bdf8', fontWeight: 700 }}>A: {formatMass(designA.metrics.rotor_mass || 0)}</div>
+                      <div style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>B: {formatMass(designB.metrics.rotor_mass || 0)}</div>
+                      <div style={{ fontSize: 11, marginTop: 6, color: '#f43f5e', fontWeight: 600 }}>
+                        {designA.metrics.rotor_mass < designB.metrics.rotor_mass ? `A es más ligero (-${Math.round(designB.metrics.rotor_mass - designA.metrics.rotor_mass)} kg)` : `B es más ligero (-${Math.round(designA.metrics.rotor_mass - designB.metrics.rotor_mass)} kg)`}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#1e293b', padding: 14, borderRadius: 6, textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Par de Arranque</div>
+                      <div style={{ fontSize: 14, color: '#38bdf8', fontWeight: 700 }}>A: {designA.metrics.starting_torque} N·m</div>
+                      <div style={{ fontSize: 14, color: '#f59e0b', fontWeight: 700 }}>B: {designB.metrics.starting_torque} N·m</div>
+                      <div style={{ fontSize: 11, marginTop: 6, color: '#f59e0b', fontWeight: 600 }}>
+                        {designA.metrics.starting_torque > designB.metrics.starting_torque ? 'A arranca con menos viento' : 'B arranca con menos viento'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 16, padding: 12, background: '#1e293b', borderRadius: 6, fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
+                    💡 <strong>Conclusión de Ingeniería:</strong> {designA.familyId === 'spherical_vawt' && designB.familyId === 'hawt_conventional' ? (
+                      `El modelo HAWT clásico ${designB.code} entrega mayor potencia máxima gracias a la sustentación pura, pero requiere orientación a barlovento con veleta. La Turbina Esférica ${designA.code} es 100% omnidireccional, genera un par de arranque mucho más elevado y opera sin vibraciones direccionales en tejados o entornos urbanos turbulentos.`
+                    ) : designA.familyId === 'hawt_conventional' && designB.familyId === 'savonius_vawt' ? (
+                      `El rotor Savonius ${designB.code} posee el par de arranque estático más robusto pero está limitado por el arrastre puro (Cp max ~0.18). El HAWT ${designA.code} extrae hasta 2.5 veces más energía por metro cuadrado de área barrida.`
+                    ) : (
+                      `La comparativa refleja el trade-off físico directo entre área barrida, peso de componentes y par inicial de giro para las escalas seleccionadas.`
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

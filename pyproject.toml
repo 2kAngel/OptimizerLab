@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "designlab"
+version = "0.1.0"
+description = "Autonomous Generative Engineering and Multi-Objective Design Discovery Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "DesignLab Team" }
+]
+license = { text = "Apache-2.0" }
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy>=2.0.36",
+    "trimesh>=4.5.0",
+    "pytest>=8.3.0",
+    "httpx>=0.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+]
+opt = [
+    "pymoo>=0.6.1",
+    "scipy>=1.13.0",
+]
+cad = [
+    "build123d",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
