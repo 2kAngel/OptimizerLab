@@ -39,6 +39,11 @@ class WindTurbineModule(EngineeringModule):
     def get_design_families(self) -> list[DesignFamily]:
         return [
             DesignFamily(
+                id="conical_drill_vane",
+                name="Turbina Cónica Tipo Taladro / Broca con Veleta",
+                description="Rotor cónico con estrías helicoidales ranuradas que gira horizontalmente de cara al viento como una veleta.",
+            ),
+            DesignFamily(
                 id="savonius_vawt",
                 name="Turbina Savonius (Eje Vertical - Arrastre)",
                 description="Rotor de eje vertical de alta solidez, excelente auto-arranque a bajas velocidades y operación omnidireccional.",
@@ -141,6 +146,14 @@ class WindTurbineModule(EngineeringModule):
                     ParameterDefinition(name="tubercle_count", description="Número de tubérculos por pala", data_type="int", min_value=4, max_value=10, default_value=6, units=""),
                     ParameterDefinition(name="tower_height", description="Altura mástil", data_type="float", min_value=1500.0, max_value=3200.0, default_value=2200.0, units="mm"),
                 ]
+            elif family_id == "conical_drill_vane":
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro exterior base D", data_type="float", min_value=400.0, max_value=1300.0, default_value=900.0, units="mm"),
+                    ParameterDefinition(name="cone_length", description="Longitud del cono / broca", data_type="float", min_value=500.0, max_value=1600.0, default_value=1000.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de estrías ranuradas", data_type="int", min_value=3, max_value=6, default_value=4, units=""),
+                    ParameterDefinition(name="tower_height", description="Altura mástil veleta", data_type="float", min_value=1500.0, max_value=3200.0, default_value=2200.0, units="mm"),
+                ]
+
             else:
                 # spherical_vawt
                 return [
@@ -559,6 +572,77 @@ class WindTurbineModule(EngineeringModule):
                 one_blade.apply_translation([rotor_radius * 0.25, 0.0, tower_h])
                 meshes.append(one_blade)
 
+        elif family_id == "conical_drill_vane":
+            # --- TURBINA CÓNICA TIPO TALADRO / BROCA CON VELETA ---
+            tower_h = float(parameters.get("tower_height", 2200.0))
+            rotor_radius = d_mm / 2.0
+            cone_len = float(parameters.get("cone_length", rotor_radius * 2.2))
+            cyl_len = rotor_radius * 0.9
+            flute_count = int(parameters.get("blade_count", 4))
+            twist_turns = float(parameters.get("twist_turns", 1.0))
+            rot_y = trimesh.transformations.rotation_matrix(math.pi / 2.0, [0, 1, 0])
+
+            # 1. Torre y rótula de giro (Yaw swivel tipo veleta)
+            tower = trimesh.creation.cylinder(radius=rotor_radius * 0.12, height=tower_h, sections=24)
+            tower.apply_translation([0.0, 0.0, tower_h / 2.0])
+            meshes.append(tower)
+
+            swivel = trimesh.creation.cylinder(radius=rotor_radius * 0.2, height=rotor_radius * 0.35, sections=24)
+            swivel.apply_translation([0.0, 0.0, tower_h])
+            meshes.append(swivel)
+
+            # 2. Núcleo cónico frontal (la punta de broca taladro apuntando al viento en -X)
+            cone_core = trimesh.creation.cone(radius=rotor_radius * 0.85, height=cone_len, sections=36)
+            rot_cone = trimesh.transformations.rotation_matrix(-math.pi / 2.0, [0, 1, 0])
+            cone_core.apply_transform(rot_cone)
+            cone_core.apply_translation([-cone_len / 2.0, 0.0, tower_h])
+            meshes.append(cone_core)
+
+            # 3. Estrías y orificios helicoidales ranurados a lo largo del cono
+            n_segs = 18
+            for f in range(flute_count):
+                base_ang = (2.0 * math.pi / flute_count) * f
+                flute_segs = []
+                for s in range(n_segs):
+                    t = s / float(n_segs - 1)
+                    x_pos = -cone_len + t * cone_len
+                    r_at_t = max(rotor_radius * 0.15, rotor_radius * t)
+                    ang = base_ang + (2.0 * math.pi * twist_turns) * t
+
+                    y_pos = r_at_t * math.cos(ang)
+                    z_pos = tower_h + r_at_t * math.sin(ang)
+
+                    seg_len = (cone_len / n_segs) * 1.15
+                    blade_h = rotor_radius * 0.28
+                    seg = trimesh.creation.box(extents=[seg_len, blade_h, 5.0])
+                    rot_blade = trimesh.transformations.rotation_matrix(ang, [1, 0, 0])
+                    seg.apply_transform(rot_blade)
+                    seg.apply_translation([x_pos, y_pos, z_pos])
+                    flute_segs.append(seg)
+                one_flute = trimesh.util.concatenate(flute_segs)
+                meshes.append(one_flute)
+
+            # 4. Tambor cilíndrico posterior con collarín de salida
+            cyl_casing = trimesh.creation.cylinder(radius=rotor_radius, height=cyl_len, sections=36)
+            cyl_casing.apply_transform(rot_y)
+            cyl_casing.apply_translation([cyl_len / 2.0, 0.0, tower_h])
+            meshes.append(cyl_casing)
+
+            flange = trimesh.creation.cylinder(radius=rotor_radius * 1.08, height=8.0, sections=36)
+            flange.apply_transform(rot_y)
+            flange.apply_translation([cyl_len, 0.0, tower_h])
+            meshes.append(flange)
+
+            # 5. Veleta estabilizadora trasera
+            tail_boom = trimesh.creation.cylinder(radius=rotor_radius * 0.06, height=rotor_radius * 1.4, sections=16)
+            tail_boom.apply_transform(rot_y)
+            tail_boom.apply_translation([cyl_len + rotor_radius * 0.7, 0.0, tower_h])
+            meshes.append(tail_boom)
+
+            tail_fin = trimesh.creation.box(extents=[rotor_radius * 0.5, 4.0, rotor_radius * 0.6])
+            tail_fin.apply_translation([cyl_len + rotor_radius * 1.3, 0.0, tower_h + rotor_radius * 0.25])
+            meshes.append(tail_fin)
+
         else:
             # --- SAVONIUS VAWT ---
             h_mm = float(parameters.get("rotor_height", 1300.0))
@@ -821,6 +905,31 @@ class WindTurbineModule(EngineeringModule):
                 "Nódulos en el borde de ataque inspirados en la aleta de ballena jorobada",
                 "Retraso de la entrada en pérdida aerodinámica (Stall delay)",
                 "Mayor tolerancia a turbulencias y rachas de viento cruzado",
+            ]
+
+        elif family_id == "conical_drill_vane":
+            # --- FÍSICA TURBINA CÓNICA TIPO TALADRO / BROCA ---
+            swept_area = math.pi * (r_m**2)
+            p_wind = 0.5 * rho_air * swept_area * (v_wind**3)
+
+            # Efecto reacción por confinamiento cónico helicoidal: Cp ~ 0.38
+            cp = 0.38
+            p_mech = round(p_wind * cp, 2)
+
+            tsr_opt = 2.4
+            omega_rad_s = (tsr_opt * v_wind) / r_m
+            rpm = round((omega_rad_s * 60.0) / (2.0 * math.pi), 1)
+
+            # Gran par de arranque debido al choque directo del flujo en el cono con estrías
+            torque_starting = round(0.5 * rho_air * swept_area * r_m * (v_wind**2) * 0.28, 3)
+            cone_mass = math.pi * (r_m**2) * 1.2 * 3.5
+            rotor_mass = round(cone_mass + 14.0, 2)
+            v_cut_in = 1.9
+
+            assumptions = [
+                "Cuerpo cónico aerodinámico alineado con el viento mediante veleta estabilizadora",
+                "Efecto de desvío tangencial por estrías helicoidales ranuradas (principio de barrena de Arquímedes)",
+                "Alto par estático inicial para auto-arranque suave con brisas leves",
             ]
 
         else:

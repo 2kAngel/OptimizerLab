@@ -38,6 +38,13 @@ def test_generative_prompt_synthesis():
     assert "VENTURI" in res2["title_code"]
     assert artifact_exists(res2["geometry_hash"], "glb") is True
 
+    # Caso 3: Taladro cónico con veleta (el croquis del usuario)
+    res3 = mod.synthesize_from_prompt("quiero una turbia tipo taladro, que apunte en la direccion del viento como una veleta, los orificios al atravesarlo lo hacen girar.")
+    assert res3["family_id"] == "conical_drill_vane"
+    assert "TALADRO" in res3["title_code"]
+    assert artifact_exists(res3["geometry_hash"], "glb") is True
+    assert res3["metrics"]["power_output"] > 0
+
 
 
 def test_hawt_conventional_3_blades_geometry_and_physics():

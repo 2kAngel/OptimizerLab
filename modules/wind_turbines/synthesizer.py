@@ -46,9 +46,13 @@ def parse_prompt_intent(prompt: str, default_scale: str = "domestic") -> Tuple[s
         overrides["blade_count"] = max(2, min(8, int(blades.group(1))))
 
     # 3. Detección de Arquitectura Aerodinámica
+    # Taladro / Broca / Cono con ranuras / Arquímedes / Veleta perforada
+    if any(k in text for k in ["taladro", "broca", "drill", "barrena", "cono", "orificio", "orificios", "arquimedes", "arquímedes", "agujero", "agujeros"]):
+        family_id = "conical_drill_vane"
     # Gorlov / Helicoidal
-    if any(k in text for k in ["gorlov", "helicoid", "espiral", "torsion", "torsión", "silencio", "vibrac"]):
+    elif any(k in text for k in ["gorlov", "helicoid", "espiral", "torsion", "torsión", "silencio", "vibrac"]):
         family_id = "helical_gorlov"
+
     # Wind Lens / Carenado / Venturi / Difusor
     elif any(k in text for k in ["lens", "lente", "venturi", "difusor", "carenad", "embudo", "duct", "anillo"]):
         family_id = "wind_lens_ducted"
@@ -104,11 +108,18 @@ def build_synthesized_parameters(family_id: str, scale: str, overrides: Dict[str
 
     params["rotor_diameter"] = d_mm
 
-    if family_id == "helical_gorlov":
+    if family_id == "conical_drill_vane":
+        params["blade_count"] = overrides.get("blade_count", 4)
+        params["cone_length"] = round(d_mm * 1.1, 1)
+        params["twist_turns"] = 1.0
+        params["tower_height"] = round(d_mm * 2.2, 1)
+
+    elif family_id == "helical_gorlov":
         params["rotor_height"] = overrides.get("rotor_height", round(d_mm * 1.25, 1))
         params["blade_count"] = overrides.get("blade_count", 3)
         params["curvature_twist"] = 120.0
         params["blade_chord"] = round(d_mm * 0.15, 1)
+
 
     elif family_id == "wind_lens_ducted":
         params["blade_count"] = overrides.get("blade_count", 3)
@@ -163,7 +174,16 @@ def generate_engineering_explanation(family_id: str, params: Dict[str, Any], met
     mass = metrics.get("rotor_mass", 0.0)
     torque = metrics.get("starting_torque", 0.0)
 
-    if family_id == "helical_gorlov":
+    if family_id == "conical_drill_vane":
+        return (
+            f"Diseño sintetizado: Turbina Cónica Tipo Taladro / Broca con Veleta (Ø {d_m:.2f} m). "
+            f"El morro cónico apunta directamente hacia el viento barlovento como una veleta. "
+            f"El aire entra frontalmente y es canalizado a través de las 4 estrías helicoidales ranuradas de la broca, "
+            f"provocando una fuerte desviación tangencial del flujo que hace rotar el conjunto por empuje reactivo continuo. "
+            f"Rendimiento estimado: {power:.1f} W (Cp={cp:.2f}), con un par de auto-arranque excepcional ({torque:.2f} N·m) y auto-orientación pasiva."
+        )
+
+    elif family_id == "helical_gorlov":
         return (
             f"Diseño sintetizado: Turbina Gorlov Helicoidal (Ø {d_m:.2f} m). "
             f"Las 3 palas helicoidales con torsión continua de {params.get('curvature_twist', 120)}° distribuyen el par motor homogéneamente en 360°, "
@@ -213,8 +233,10 @@ def format_top_code(family_id: str, scale: str, params: Dict[str, Any]) -> str:
     d_val = int(round(params.get("rotor_diameter", 1000.0)))
 
     type_code_map = {
+        "conical_drill_vane": "TALADRO",
         "helical_gorlov": "GORLOV",
         "wind_lens_ducted": "VENTURI",
+
         "hybrid_savonius_darrieus": "HIBRID",
         "counter_rotating_crwt": "CRWT",
         "bionic_whale_tubercle": "BIONIC",

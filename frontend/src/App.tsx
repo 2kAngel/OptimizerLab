@@ -342,6 +342,14 @@ export default function App() {
         tower_height: Number(hawtTowerHeight),
         pitch_angle: 6.0,
       }
+    } else if (selectedFamilyId === 'conical_drill_vane') {
+      return {
+        rotor_diameter: Number(hawtDiameter),
+        blade_count: 4,
+        cone_length: Number(hawtDiameter * 1.1),
+        tower_height: Number(hawtTowerHeight),
+      }
+
     } else {
       // savonius
       return {
@@ -370,7 +378,9 @@ export default function App() {
       hybrid_savonius_darrieus: 'HIBRID',
       counter_rotating_crwt: 'CRWT',
       bionic_whale_tubercle: 'BIONIC',
+      conical_drill_vane: 'TALADRO',
     }
+
     const typeCode = typeCodeMap[fam] || 'GEN'
     const bladesCount = p.blade_count || (fam === 'spherical_vawt' ? 6 : 3)
     const bladesCode = `${bladesCount}${fam === 'spherical_vawt' ? 'AL' : 'P'}`
@@ -395,7 +405,9 @@ export default function App() {
       hybrid_savonius_darrieus: 'Híbrida Savonius-Darrieus',
       counter_rotating_crwt: 'Doble Rotor Contrarrotativo',
       bionic_whale_tubercle: 'Bioinspirada (Tubérculos Ballena)',
+      conical_drill_vane: 'Turbina Cónica Tipo Taladro (Broca)',
     }
+
     const familyName = familyNames[selectedFamilyId] || selectedFamilyId
 
     const newTop: SavedTopDesign = {
@@ -790,6 +802,7 @@ export default function App() {
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #0284c7', fontWeight: 600, marginBottom: 8 }}
               >
                 <option value="spherical_vawt">🌐 Turbina Esférica (Omnidireccional)</option>
+                <option value="conical_drill_vane">🔩 Turbina Cónica Tipo Taladro (Broca Veleta)</option>
                 <option value="hawt_conventional">🌬️ HAWT Clásico (Molino 3 Palas)</option>
                 <option value="savonius_vawt">🔄 Savonius (Eje Vertical - Arrastre)</option>
                 <option value="helical_gorlov">🌪️ Gorlov Helicoidal (Silenciosa - Azotea)</option>
@@ -1001,6 +1014,7 @@ export default function App() {
               {/* Botones de Atajo Rápido (Chips) */}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
                 {[
+                  { label: '🔩 Broca Cónica / Taladro con Veleta', prompt: 'quiero una turbina tipo taladro, que apunte en la direccion del viento como una veleta, los orificios al atravesarlo lo hacen girar' },
                   { label: '🌪️ Gorlov Helicoidal (Azotea Silenciosa)', prompt: 'Quiero una turbina helicoidal Gorlov de 3 palas con alta torsión para azotea urbana, ultra silenciosa y sin vibraciones' },
                   { label: '🔍 Difusor Venturi (Wind Lens - Brisas)', prompt: 'Turbina con difusor y carenado Venturi tipo Wind Lens con pestaña anular para acelerar el viento y arrancar con brisas suaves' },
                   { label: '⚡ Híbrida Savonius-Darrieus', prompt: 'Turbina híbrida de doble etapa con núcleo Savonius para alto par de arranque y palas exteriores Darrieus para alta velocidad' },
@@ -1165,6 +1179,7 @@ export default function App() {
                   {selectedFamilyId === 'hawt_conventional' && `Molino HAWT — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala (Iberdrola)'}`}
                   {selectedFamilyId === 'savonius_vawt' && `Rotor Savonius — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
                   {selectedFamilyId === 'spherical_vawt' && `Turbina Esférica — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedFamilyId === 'conical_drill_vane' && `Turbina Cónica Tipo Taladro (Broca Veleta) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
                   {selectedFamilyId === 'helical_gorlov' && `Turbina Gorlov Helicoidal — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
                   {selectedFamilyId === 'wind_lens_ducted' && `Turbina Difusor Venturi (Wind Lens) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
                   {selectedFamilyId === 'hybrid_savonius_darrieus' && `Turbina Híbrida Savonius-Darrieus — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
