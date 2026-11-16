@@ -214,14 +214,20 @@ export default function App() {
     }
   }
 
-  const fetchProjects = async () => {
+  const fetchProjects = async (preferredId?: string) => {
     try {
       const res = await fetch('/api/projects')
       if (res.ok) {
-        const data = await res.json()
+        const data: Project[] = await res.json()
         setProjects(data)
-        if (data.length > 0 && !selectedProjectId) {
-          setSelectedProjectId(data[0].id)
+        if (data.length > 0) {
+          if (preferredId && data.some((p) => p.id === preferredId)) {
+            setSelectedProjectId(preferredId)
+          } else if (!selectedProjectId || !data.some((p) => p.id === selectedProjectId)) {
+            setSelectedProjectId(data[0].id)
+          }
+        } else {
+          setSelectedProjectId('')
         }
       }
     } catch (e) {
@@ -261,8 +267,7 @@ export default function App() {
         setNewProjectName('')
         setNewProjectDesc('')
         setLogMessage(`Proyecto "${proj.name}" creado con éxito (ID: ${proj.id})`)
-        await fetchProjects()
-        setSelectedProjectId(proj.id)
+        await fetchProjects(proj.id)
       }
     } finally {
       setLoading(false)
@@ -278,7 +283,6 @@ export default function App() {
       if (res.ok) {
         setLogMessage('Proyecto eliminado correctamente.')
         await fetchProjects()
-        setSelectedProjectId('')
         setCandidates([])
         setSelectedCandidate(null)
       }

@@ -2,6 +2,7 @@
 Configuración de la base de datos SQLite con modo WAL y timeouts seguros para concurrencia.
 """
 
+import os
 from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -10,9 +11,10 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STORAGE_DIR = BASE_DIR / "storage"
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = STORAGE_DIR / "designlab.db"
 
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+DEFAULT_DB_PATH = STORAGE_DIR / "designlab.db"
+DB_PATH = Path(os.environ.get("DESIGNLAB_DB_PATH", str(DEFAULT_DB_PATH)))
+DATABASE_URL = os.environ.get("DESIGNLAB_DB_URL", f"sqlite:///{DB_PATH}")
 
 engine = create_engine(
     DATABASE_URL,
