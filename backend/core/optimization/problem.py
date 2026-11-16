@@ -24,8 +24,13 @@ class DesignLabOptimizationProblem(Problem):
         self.family_id = family_id
         self.operating_conditions = operating_conditions
 
-        # 1. Parámetros y límites
-        self.param_defs = self.module.get_parameters(family_id)
+        # 1. Parámetros y límites según escala
+        scale = str(self.operating_conditions.get("scale", "domestic")).lower()
+        if hasattr(self.module, "get_parameters_for_scale"):
+            self.param_defs = self.module.get_parameters_for_scale(family_id, scale)
+        else:
+            self.param_defs = self.module.get_parameters(family_id)
+
         # Filtrar solo parámetros numéricos para optimización continua
         self.continuous_params = [
             p for p in self.param_defs if p.data_type in {"float", "int"} and p.min_value is not None and p.max_value is not None
@@ -41,8 +46,11 @@ class DesignLabOptimizationProblem(Problem):
         self.n_obj = len(self.obj_defs)
         self.obj_names = [o.name for o in self.obj_defs]
 
-        # 3. Restricciones
-        self.constraint_defs = self.module.get_constraints(family_id)
+        # 3. Restricciones según escala
+        if hasattr(self.module, "get_constraints_for_scale"):
+            self.constraint_defs = self.module.get_constraints_for_scale(family_id, scale)
+        else:
+            self.constraint_defs = self.module.get_constraints(family_id)
         n_ieq_constr = len(self.constraint_defs)
 
         super().__init__(

@@ -56,31 +56,92 @@ class WindTurbineModule(EngineeringModule):
         ]
 
     def get_parameters(self, family_id: str) -> list[ParameterDefinition]:
-        if family_id == "savonius_vawt":
-            return [
-                ParameterDefinition(name="rotor_diameter", description="Diámetro exterior total del rotor D", data_type="float", min_value=300.0, max_value=3000.0, default_value=900.0, units="mm"),
-                ParameterDefinition(name="rotor_height", description="Altura total del rotor H", data_type="float", min_value=300.0, max_value=3500.0, default_value=1300.0, units="mm"),
-                ParameterDefinition(name="blade_count", description="Número de palas (2 o 3 palas)", data_type="int", min_value=2, max_value=3, default_value=2, units=""),
-                ParameterDefinition(name="overlap_ratio", description="Relación de solapamiento entre palas (s/d)", data_type="float", min_value=0.08, max_value=0.30, default_value=0.18, units=""),
-                ParameterDefinition(name="blade_thickness", description="Espesor del material de las palas", data_type="float", min_value=1.5, max_value=8.0, default_value=3.0, units="mm"),
-                ParameterDefinition(name="shaft_diameter", description="Diámetro del eje motriz central", data_type="float", min_value=20.0, max_value=60.0, default_value=30.0, units="mm"),
-            ]
-        elif family_id == "hawt_conventional":
-            return [
-                ParameterDefinition(name="rotor_diameter", description="Diámetro del disco rotor D", data_type="float", min_value=500.0, max_value=5000.0, default_value=2000.0, units="mm"),
-                ParameterDefinition(name="blade_count", description="Número de palas (típico 3 palas)", data_type="int", min_value=2, max_value=4, default_value=3, units=""),
-                ParameterDefinition(name="root_chord", description="Cuerda de la pala en la raíz", data_type="float", min_value=60.0, max_value=350.0, default_value=150.0, units="mm"),
-                ParameterDefinition(name="pitch_angle", description="Ángulo de calado / pitch de la pala", data_type="float", min_value=0.0, max_value=25.0, default_value=5.0, units="deg"),
-                ParameterDefinition(name="tower_height", description="Altura de la torre soporte", data_type="float", min_value=1000.0, max_value=6000.0, default_value=2500.0, units="mm"),
-            ]
+        return self.get_parameters_for_scale(family_id, "domestic")
+
+    def get_parameters_for_scale(self, family_id: str, scale: str = "domestic") -> list[ParameterDefinition]:
+        if scale == "domestic":
+            # --- ESCALA DOMÉSTICA (Casas, azoteas, huertos residenciales) ---
+            # Límites realistas: Diámetro <= 1.4m, masa ligera (manejable en tejado)
+            if family_id == "savonius_vawt":
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro D (Doméstico)", data_type="float", min_value=300.0, max_value=1000.0, default_value=650.0, units="mm"),
+                    ParameterDefinition(name="rotor_height", description="Altura H (Doméstico)", data_type="float", min_value=400.0, max_value=1400.0, default_value=1000.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de palas", data_type="int", min_value=2, max_value=3, default_value=2, units=""),
+                    ParameterDefinition(name="overlap_ratio", description="Relación de solapamiento (s/d)", data_type="float", min_value=0.10, max_value=0.28, default_value=0.18, units=""),
+                    ParameterDefinition(name="blade_thickness", description="Espesor del material", data_type="float", min_value=1.5, max_value=3.5, default_value=2.0, units="mm"),
+                    ParameterDefinition(name="shaft_diameter", description="Diámetro eje motriz", data_type="float", min_value=20.0, max_value=40.0, default_value=25.0, units="mm"),
+                ]
+            elif family_id == "hawt_conventional":
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro rotor D (Doméstico)", data_type="float", min_value=600.0, max_value=1800.0, default_value=1400.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de palas", data_type="int", min_value=2, max_value=4, default_value=3, units=""),
+                    ParameterDefinition(name="root_chord", description="Cuerda de pala en la raíz", data_type="float", min_value=50.0, max_value=160.0, default_value=100.0, units="mm"),
+                    ParameterDefinition(name="pitch_angle", description="Ángulo de pitch", data_type="float", min_value=0.0, max_value=20.0, default_value=5.0, units="deg"),
+                    ParameterDefinition(name="tower_height", description="Altura de torre (Doméstico)", data_type="float", min_value=1500.0, max_value=3500.0, default_value=2500.0, units="mm"),
+                ]
+            else:
+                # spherical_vawt
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro esférico D (Doméstico)", data_type="float", min_value=400.0, max_value=1300.0, default_value=900.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de álabes meridianos", data_type="int", min_value=4, max_value=8, default_value=6, units=""),
+                    ParameterDefinition(name="blade_thickness", description="Espesor de los álabes", data_type="float", min_value=1.5, max_value=4.0, default_value=2.5, units="mm"),
+                    ParameterDefinition(name="curvature_twist", description="Ángulo de torsión helicoidal", data_type="float", min_value=15.0, max_value=60.0, default_value=45.0, units="deg"),
+                ]
+
+        elif scale == "medium":
+            # --- ESCALA MEDIANA (Naves industriales, polideportivos, parques) ---
+            if family_id == "savonius_vawt":
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro D (Mediano)", data_type="float", min_value=1200.0, max_value=2500.0, default_value=1800.0, units="mm"),
+                    ParameterDefinition(name="rotor_height", description="Altura H (Mediano)", data_type="float", min_value=1800.0, max_value=4000.0, default_value=2800.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de palas", data_type="int", min_value=2, max_value=3, default_value=2, units=""),
+                    ParameterDefinition(name="overlap_ratio", description="Relación de solapamiento", data_type="float", min_value=0.10, max_value=0.28, default_value=0.18, units=""),
+                    ParameterDefinition(name="blade_thickness", description="Espesor del material", data_type="float", min_value=3.0, max_value=6.0, default_value=4.0, units="mm"),
+                    ParameterDefinition(name="shaft_diameter", description="Diámetro eje motriz", data_type="float", min_value=40.0, max_value=70.0, default_value=50.0, units="mm"),
+                ]
+            elif family_id == "hawt_conventional":
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro rotor D (Mediano)", data_type="float", min_value=2500.0, max_value=6500.0, default_value=4500.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de palas", data_type="int", min_value=2, max_value=4, default_value=3, units=""),
+                    ParameterDefinition(name="root_chord", description="Cuerda de pala en la raíz", data_type="float", min_value=150.0, max_value=400.0, default_value=250.0, units="mm"),
+                    ParameterDefinition(name="pitch_angle", description="Ángulo de pitch", data_type="float", min_value=0.0, max_value=25.0, default_value=5.0, units="deg"),
+                    ParameterDefinition(name="tower_height", description="Altura de torre (Mediano)", data_type="float", min_value=5000.0, max_value=12000.0, default_value=8000.0, units="mm"),
+                ]
+            else:
+                # spherical_vawt
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro esférico D (Mediano)", data_type="float", min_value=1400.0, max_value=3000.0, default_value=2200.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de álabes meridianos", data_type="int", min_value=4, max_value=8, default_value=6, units=""),
+                    ParameterDefinition(name="blade_thickness", description="Espesor de los álabes", data_type="float", min_value=3.0, max_value=7.0, default_value=4.5, units="mm"),
+                    ParameterDefinition(name="curvature_twist", description="Ángulo de torsión helicoidal", data_type="float", min_value=15.0, max_value=60.0, default_value=45.0, units="deg"),
+                ]
+
         else:
-            # spherical_vawt
-            return [
-                ParameterDefinition(name="rotor_diameter", description="Diámetro esférico D", data_type="float", min_value=400.0, max_value=2500.0, default_value=1000.0, units="mm"),
-                ParameterDefinition(name="blade_count", description="Número de álabes meridianos esféricos", data_type="int", min_value=4, max_value=8, default_value=6, units=""),
-                ParameterDefinition(name="blade_thickness", description="Espesor de los álabes", data_type="float", min_value=2.0, max_value=8.0, default_value=3.5, units="mm"),
-                ParameterDefinition(name="curvature_twist", description="Ángulo de torsión helicoidal sobre la esfera", data_type="float", min_value=10.0, max_value=90.0, default_value=45.0, units="deg"),
-            ]
+            # --- GRAN ESCALA (Empresas, montes, parques eólicos — Escala Iberdrola) ---
+            if family_id == "savonius_vawt":
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro D (Gran Escala)", data_type="float", min_value=3000.0, max_value=7000.0, default_value=4500.0, units="mm"),
+                    ParameterDefinition(name="rotor_height", description="Altura H (Gran Escala)", data_type="float", min_value=5000.0, max_value=12000.0, default_value=8000.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de palas", data_type="int", min_value=2, max_value=3, default_value=2, units=""),
+                    ParameterDefinition(name="overlap_ratio", description="Relación de solapamiento", data_type="float", min_value=0.10, max_value=0.28, default_value=0.18, units=""),
+                    ParameterDefinition(name="blade_thickness", description="Espesor de las palas", data_type="float", min_value=5.0, max_value=12.0, default_value=8.0, units="mm"),
+                    ParameterDefinition(name="shaft_diameter", description="Diámetro eje motriz", data_type="float", min_value=80.0, max_value=180.0, default_value=120.0, units="mm"),
+                ]
+            elif family_id == "hawt_conventional":
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro rotor D (Gran Escala)", data_type="float", min_value=15000.0, max_value=55000.0, default_value=35000.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de palas", data_type="int", min_value=2, max_value=4, default_value=3, units=""),
+                    ParameterDefinition(name="root_chord", description="Cuerda de pala en la raíz", data_type="float", min_value=800.0, max_value=2500.0, default_value=1500.0, units="mm"),
+                    ParameterDefinition(name="pitch_angle", description="Ángulo de pitch", data_type="float", min_value=0.0, max_value=25.0, default_value=5.0, units="deg"),
+                    ParameterDefinition(name="tower_height", description="Altura de torre (Gran Escala)", data_type="float", min_value=25000.0, max_value=75000.0, default_value=50000.0, units="mm"),
+                ]
+            else:
+                return [
+                    ParameterDefinition(name="rotor_diameter", description="Diámetro esférico D (Gran Escala)", data_type="float", min_value=3000.0, max_value=7500.0, default_value=5000.0, units="mm"),
+                    ParameterDefinition(name="blade_count", description="Número de álabes meridianos", data_type="int", min_value=4, max_value=8, default_value=6, units=""),
+                    ParameterDefinition(name="blade_thickness", description="Espesor de los álabes", data_type="float", min_value=5.0, max_value=12.0, default_value=8.0, units="mm"),
+                    ParameterDefinition(name="curvature_twist", description="Ángulo de torsión", data_type="float", min_value=15.0, max_value=60.0, default_value=45.0, units="deg"),
+                ]
 
     def get_objectives(self, family_id: str) -> list[ObjectiveDefinition]:
         return [
@@ -91,10 +152,27 @@ class WindTurbineModule(EngineeringModule):
         ]
 
     def get_constraints(self, family_id: str) -> list[ConstraintDefinition]:
-        return [
+        return self.get_constraints_for_scale(family_id, "domestic")
+
+    def get_constraints_for_scale(self, family_id: str, scale: str = "domestic") -> list[ConstraintDefinition]:
+        base_constraints = [
             ConstraintDefinition(name="max_stress", description="Tensión máxima admisible", constraint_type="lte", limit_value=200.0, units="MPa"),
             ConstraintDefinition(name="cut_in_wind_speed", description="Velocidad de viento de arranque", constraint_type="lte", limit_value=4.0, units="m/s"),
         ]
+        if scale == "domestic":
+            # Límites realistas de instalación residencial en azotea o poste de jardín:
+            # 1. Masa máxima del conjunto <= 25 kg (instalable por 1 o 2 personas sin grúa y seguro en forjado residencial)
+            # 2. Par de arranque <= 12 N·m (para no transmitir momentos torsionales peligrosos al anclaje de la cubierta)
+            base_constraints.extend([
+                ConstraintDefinition(name="rotor_mass", description="Masa máxima admisible en azotea doméstica", constraint_type="lte", limit_value=25.0, units="kg"),
+                ConstraintDefinition(name="starting_torque", description="Límite seguro de par en mástil residencial", constraint_type="lte", limit_value=12.0, units="N·m"),
+            ])
+        elif scale == "medium":
+            base_constraints.extend([
+                ConstraintDefinition(name="rotor_mass", description="Masa máxima para naves y parques", constraint_type="lte", limit_value=180.0, units="kg"),
+                ConstraintDefinition(name="starting_torque", description="Par admisible en estructura comercial", constraint_type="lte", limit_value=100.0, units="N·m"),
+            ])
+        return base_constraints
 
     def generate_geometry(self, family_id: str, parameters: dict[str, Any]) -> GeometryOutput:
         d_mm = float(parameters.get("rotor_diameter", 1000.0))

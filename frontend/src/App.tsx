@@ -97,19 +97,19 @@ export default function App() {
   const [vsBId, setVsBId] = useState<string>('')
 
   // Parámetros HAWT Clásico (Tipo Iberdrola)
-  const [hawtDiameter, setHawtDiameter] = useState(1800)
-  const [hawtTowerHeight, setHawtTowerHeight] = useState(3000)
-  const [hawtBlades, setHawtBlades] = useState(2)
+  const [hawtDiameter, setHawtDiameter] = useState(1400)
+  const [hawtTowerHeight, setHawtTowerHeight] = useState(2500)
+  const [hawtBlades, setHawtBlades] = useState(3)
   const [hawtPitch, setHawtPitch] = useState(5.0)
 
   // Parámetros Savonius VAWT
-  const [savDiameter, setSavDiameter] = useState(800)
-  const [savHeight, setSavHeight] = useState(1200)
+  const [savDiameter, setSavDiameter] = useState(650)
+  const [savHeight, setSavHeight] = useState(1000)
   const [savBlades, setSavBlades] = useState(2)
   const [savOverlap, setSavOverlap] = useState(0.18)
 
   // Parámetros Turbina Esférica
-  const [sphereDiameter, setSphereDiameter] = useState(1000)
+  const [sphereDiameter, setSphereDiameter] = useState(900)
   const [sphereBlades, setSphereBlades] = useState(6)
 
   // Viento común
@@ -128,30 +128,30 @@ export default function App() {
     }
   }, [savedTops])
 
-  // Cambiar escala preestablecida
+  // Cambiar escala preestablecida con límites realistas
   const handleScaleChange = (scale: ScaleType) => {
     setSelectedScale(scale)
     if (scale === 'domestic') {
-      setHawtDiameter(1800)
-      setHawtTowerHeight(3000)
-      setSavDiameter(800)
-      setSavHeight(1200)
-      setSphereDiameter(1000)
+      setHawtDiameter(1400)
+      setHawtTowerHeight(2500)
+      setSavDiameter(650)
+      setSavHeight(1000)
+      setSphereDiameter(900)
       setWindSpeed(7.5)
     } else if (scale === 'medium') {
-      setHawtDiameter(6000)
-      setHawtTowerHeight(10000)
-      setSavDiameter(2200)
-      setSavHeight(3500)
-      setSphereDiameter(2400)
+      setHawtDiameter(4500)
+      setHawtTowerHeight(8000)
+      setSavDiameter(1800)
+      setSavHeight(2800)
+      setSphereDiameter(2200)
       setWindSpeed(8.5)
     } else {
       // large scale (tipo Iberdrola monte / parque eólico)
       setHawtDiameter(35000)
       setHawtTowerHeight(50000)
-      setSavDiameter(5000)
-      setSavHeight(10000)
-      setSphereDiameter(6000)
+      setSavDiameter(4500)
+      setSavHeight(8000)
+      setSphereDiameter(5000)
       setWindSpeed(10.5)
     }
   }
@@ -379,7 +379,7 @@ export default function App() {
     try {
       const familyId = selectedFamilyId
       const parameters = getActiveParameters()
-      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225 }
+      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225, scale: selectedScale }
 
       const scaleLabel = selectedScale === 'domestic' ? 'Doméstico' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'
       const expName = `${familyName} — ${scaleLabel} (v=${windSpeed} m/s)`
@@ -461,7 +461,7 @@ export default function App() {
 
     try {
       const familyId = selectedFamilyId
-      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225 }
+      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225, scale: selectedScale }
 
       const expRes = await fetch('/api/experiments', {
         method: 'POST',
@@ -832,9 +832,9 @@ export default function App() {
                   {selectedFamilyId === 'spherical_vawt' && `Turbina Esférica — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
                 </h2>
                 <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                  {selectedScale === 'domestic' && 'Diámetro de 1 a 2m | Potencia esperada: 300W - 1.5kW'}
-                  {selectedScale === 'medium' && 'Diámetro de 4 a 8m | Potencia esperada: 5kW - 30kW'}
-                  {selectedScale === 'large' && 'Diámetro de 20 a 50m | Potencia esperada: 100kW - 2MW+'}
+                  {selectedScale === 'domestic' && 'Diámetro de 0.4 a 1.4m | Masa máx admisible: 25 kg | Potencia esperada: 50W - 400W (Rooftop seguro)'}
+                  {selectedScale === 'medium' && 'Diámetro de 1.5 a 6.5m | Masa máx admisible: 180 kg | Potencia esperada: 1.5kW - 12kW (Naves y parques)'}
+                  {selectedScale === 'large' && 'Diámetro de 15 a 55m | Masa: toneladas | Potencia esperada: 100kW - 2MW+ (Parque eólico / monte)'}
                 </span>
               </div>
 
