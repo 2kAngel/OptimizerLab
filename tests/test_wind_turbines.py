@@ -15,10 +15,29 @@ def test_wind_turbine_metadata_and_families():
     assert meta.id == "wind_turbines"
     
     families = mod.get_design_families()
-    assert len(families) == 3
+    assert len(families) >= 3
     assert any(f.id == "savonius_vawt" for f in families)
     assert any(f.id == "hawt_conventional" for f in families)
     assert any(f.id == "spherical_vawt" for f in families)
+    assert any(f.id == "helical_gorlov" for f in families)
+    assert any(f.id == "wind_lens_ducted" for f in families)
+
+
+def test_generative_prompt_synthesis():
+    mod = WindTurbineModule()
+    # Caso 1: Helicoidal Gorlov para azotea
+    res1 = mod.synthesize_from_prompt("Quiero una turbina helicoidal Gorlov de 3 palas para azotea, muy silenciosa")
+    assert res1["family_id"] == "helical_gorlov"
+    assert "TOP-DOM-GORLOV" in res1["title_code"]
+    assert artifact_exists(res1["geometry_hash"], "glb") is True
+    assert res1["metrics"]["power_output"] > 0
+
+    # Caso 2: Carenado Venturi / Wind Lens
+    res2 = mod.synthesize_from_prompt("Turbina con lente difusor Venturi de 1 metro para brisa suave")
+    assert res2["family_id"] == "wind_lens_ducted"
+    assert "VENTURI" in res2["title_code"]
+    assert artifact_exists(res2["geometry_hash"], "glb") is True
+
 
 
 def test_hawt_conventional_3_blades_geometry_and_physics():

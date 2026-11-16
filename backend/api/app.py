@@ -111,6 +111,14 @@ class OptimizeRequest(BaseModel):
     n_gen: int = Field(3, ge=1, le=50, description="Número de generaciones a evolucionar")
     seed: Optional[int] = Field(None, description="Semilla determinista opcional")
 
+class GenerativePromptRequest(BaseModel):
+    project_id: str
+    module_id: str = "wind_turbines"
+    prompt: str = Field(..., min_length=3, description="Descripción del diseño o arquitectura deseada")
+    scale: str = Field("domestic", description="Escala de aplicación")
+    operating_conditions: Dict[str, Any] = Field(default_factory=dict)
+
+
 class JobSubmitRequest(BaseModel):
     task_type: str
     payload: Dict[str, Any]
@@ -375,5 +383,98 @@ def launch_optimization(experiment_id: str, data: OptimizeRequest, db: Session =
         },
     )
     return job
+
+
+# --- Síntesis Generativa Asistida por Prompt ---
+
+@app.post("/api/generative/prompt-design")
+def generate_design_from_prompt(data: GenerativePromptRequest, db: Session = Depends(get_db)):
+    """Sintetiza una arquitectura no convencional a partir de un prompt en lenguaje natural."""
+    project = db.query(Project).filter(Project.id == data.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    try:
+        module = registry.get_module(data.module_id)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Módulo '{data.module_id}' no encontrado.")
+
+    try:
+        synthesis = module.synthesize_from_prompt(
+            prompt=data.prompt,
+            scale=data.scale,
+            operating_conditions=data.operating_conditions,
+        )
+    except NotImplementedError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error en síntesis generativa: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error al sintetizar diseño: {str(e)}")
+
+    family_id = synthesis["family_id"]
+    exp = (
+        db.query(Experiment)
+        .filter(Experiment.project_id == data.project_id, Experiment.family_id == family_id)
+        .first()
+    )
+    if not exp:
+        exp = Experiment(
+            project_id=data.project_id,
+            name=f"Generativo: {synthesis['family_name']}",
+            module_id=data.module_id,
+            family_id=family_id,
+            configuration={"scale": data.scale, "source": "prompt", "prompt": data.prompt},
+        )
+        db.add(exp)
+        db.commit()
+        db.refresh(exp)
+
+    import uuid
+    candidate = Candidate(
+        id=str(uuid.uuid4()),
+        experiment_id=exp.id,
+        generation_index=0,
+        candidate_index=len(exp.candidates) + 1,
+        parameters=synthesis["parameters"],
+        geometry_hash=synthesis["geometry_hash"],
+        validation_status="VALID",
+    )
+    db.add(candidate)
+
+    eval_rec = Evaluation(
+        id=str(uuid.uuid4()),
+        candidate_id=candidate.id,
+        fidelity_level="LEVEL_1_ANALYTICAL",
+        solver_name=f"{family_id}_generative_solver",
+        convergence_status="CONVERGED",
+        metrics=synthesis["metrics"],
+        execution_time_seconds=0.01,
+    )
+    db.add(eval_rec)
+    db.commit()
+    db.refresh(candidate)
+
+    return {
+        "candidate": {
+            "id": candidate.id,
+            "generation": candidate.generation_index,
+            "index": candidate.candidate_index,
+            "parameters": candidate.parameters,
+            "geometry_hash": candidate.geometry_hash,
+            "status": candidate.validation_status,
+            "evaluations": [
+                {
+                    "id": eval_rec.id,
+                    "fidelity": eval_rec.fidelity_level,
+                    "solver": eval_rec.solver_name,
+                    "status": eval_rec.convergence_status,
+                    "metrics": eval_rec.metrics,
+                    "time": eval_rec.execution_time_seconds,
+                }
+            ],
+        },
+        "synthesis": synthesis,
+    }
+
 
 

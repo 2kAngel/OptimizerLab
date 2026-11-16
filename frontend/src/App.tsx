@@ -82,6 +82,26 @@ export default function App() {
   const [randomSeed, setRandomSeed] = useState(true)
   const [manualSeed, setManualSeed] = useState(42)
 
+  // Exploración Libre por Prompt (Diseño Generativo)
+  const [promptInput, setPromptInput] = useState('')
+  const [promptLoading, setPromptLoading] = useState(false)
+  const [lastSynthesis, setLastSynthesis] = useState<{
+    candidate: Candidate
+    synthesis: {
+      family_id: string
+      family_name: string
+      title_code: string
+      scale: ScaleType
+      prompt: string
+      explanation: string
+      parameters: Record<string, any>
+      metrics: Record<string, number>
+      geometry_hash: string
+      assumptions: string[]
+    }
+  } | null>(null)
+
+
   // Banco de Diseños Top Guardados (Persistencia en localStorage)
   const [savedTops, setSavedTops] = useState<SavedTopDesign[]>(() => {
     try {
@@ -283,6 +303,45 @@ export default function App() {
         blade_thickness: Math.max(3.0, sphereDiameter * 0.0035),
         curvature_twist: 45.0,
       }
+    } else if (selectedFamilyId === 'helical_gorlov') {
+      return {
+        rotor_diameter: Number(sphereDiameter),
+        rotor_height: Number(sphereDiameter * 1.25),
+        blade_count: 3,
+        curvature_twist: 120.0,
+        blade_chord: Number(sphereDiameter * 0.15),
+      }
+    } else if (selectedFamilyId === 'wind_lens_ducted') {
+      return {
+        rotor_diameter: Number(hawtDiameter),
+        blade_count: 3,
+        diffuser_length: Number(hawtDiameter * 0.35),
+        brim_height: Number(hawtDiameter * 0.08),
+        pitch_angle: 5.0,
+        tower_height: Number(hawtTowerHeight),
+      }
+    } else if (selectedFamilyId === 'hybrid_savonius_darrieus') {
+      return {
+        rotor_diameter: Number(sphereDiameter),
+        rotor_height: Number(sphereDiameter * 1.3),
+        inner_diameter: Number(sphereDiameter * 0.45),
+        blade_count: 3,
+      }
+    } else if (selectedFamilyId === 'counter_rotating_crwt') {
+      return {
+        rotor_diameter: Number(hawtDiameter),
+        blade_count: 3,
+        rotor_spacing: Number(hawtDiameter * 0.35),
+        tower_height: Number(hawtTowerHeight),
+      }
+    } else if (selectedFamilyId === 'bionic_whale_tubercle') {
+      return {
+        rotor_diameter: Number(hawtDiameter),
+        blade_count: 3,
+        tubercle_count: 6,
+        tower_height: Number(hawtTowerHeight),
+        pitch_angle: 6.0,
+      }
     } else {
       // savonius
       return {
@@ -300,24 +359,22 @@ export default function App() {
     const fam = famId || selectedFamilyId
     const currentScale = sc || selectedScale
     const scaleCode = currentScale === 'domestic' ? 'DOM' : currentScale === 'medium' ? 'MED' : 'GRAN'
-    let typeCode = 'ESFR'
-    let bladesCode = '6AL'
-    let dimCode = '1000D'
-
     const p = cand.parameters || {}
-    if (fam === 'hawt_conventional') {
-      typeCode = 'HAWT'
-      bladesCode = `${p.blade_count || 3}P`
-      dimCode = `${Math.round(p.rotor_diameter || 1800)}D`
-    } else if (fam === 'savonius_vawt') {
-      typeCode = 'SAVO'
-      bladesCode = `${p.blade_count || 2}P`
-      dimCode = `${Math.round(p.rotor_diameter || 800)}D`
-    } else {
-      typeCode = 'ESFR'
-      bladesCode = `${p.blade_count || 6}AL`
-      dimCode = `${Math.round(p.rotor_diameter || 1000)}D`
+
+    const typeCodeMap: Record<string, string> = {
+      hawt_conventional: 'HAWT',
+      savonius_vawt: 'SAVO',
+      spherical_vawt: 'ESFR',
+      helical_gorlov: 'GORLOV',
+      wind_lens_ducted: 'VENTURI',
+      hybrid_savonius_darrieus: 'HIBRID',
+      counter_rotating_crwt: 'CRWT',
+      bionic_whale_tubercle: 'BIONIC',
     }
+    const typeCode = typeCodeMap[fam] || 'GEN'
+    const bladesCount = p.blade_count || (fam === 'spherical_vawt' ? 6 : 3)
+    const bladesCode = `${bladesCount}${fam === 'spherical_vawt' ? 'AL' : 'P'}`
+    const dimCode = `${Math.round(p.rotor_diameter || 1000)}D`
 
     return `TOP-${scaleCode}-${typeCode}-${bladesCode}-${dimCode}`
   }
@@ -329,7 +386,17 @@ export default function App() {
     const p = cand.parameters || {}
 
     const scaleLabel = selectedScale === 'domestic' ? 'Doméstico' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'
-    const familyName = selectedFamilyId === 'hawt_conventional' ? 'HAWT Clásico (Molino)' : selectedFamilyId === 'savonius_vawt' ? 'Savonius VAWT (Arrastre)' : 'Turbina Esférica (Omnidireccional)'
+    const familyNames: Record<string, string> = {
+      hawt_conventional: 'HAWT Clásico (Molino)',
+      savonius_vawt: 'Savonius VAWT (Arrastre)',
+      spherical_vawt: 'Turbina Esférica (Omnidireccional)',
+      helical_gorlov: 'Gorlov Helicoidal (Silenciosa)',
+      wind_lens_ducted: 'Difusor Venturi (Wind Lens)',
+      hybrid_savonius_darrieus: 'Híbrida Savonius-Darrieus',
+      counter_rotating_crwt: 'Doble Rotor Contrarrotativo',
+      bionic_whale_tubercle: 'Bioinspirada (Tubérculos Ballena)',
+    }
+    const familyName = familyNames[selectedFamilyId] || selectedFamilyId
 
     const newTop: SavedTopDesign = {
       id: `${code}-${Date.now().toString().slice(-4)}`,
@@ -353,6 +420,79 @@ export default function App() {
 
     setLogMessage(`⭐ ¡Diseño guardado exitosamente como Benchmark: "${code}"! Puedes compararlo en la pestaña de Tops.`)
   }
+
+  const handleGenerateFromPrompt = async (customText?: string) => {
+    const textToUse = (customText || promptInput).trim()
+    if (!textToUse) {
+      alert('Por favor escribe un prompt o haz clic en uno de los atajos sugeridos.')
+      return
+    }
+    if (!selectedProjectId) {
+      alert('Seleccione o cree un proyecto primero.')
+      return
+    }
+
+    setPromptLoading(true)
+    setLogMessage(`✨ Sintetizando arquitectura a partir del prompt: "${textToUse}"...`)
+
+    try {
+      const res = await fetch('/api/generative/prompt-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: selectedProjectId,
+          module_id: selectedModuleId,
+          prompt: textToUse,
+          scale: selectedScale,
+          operating_conditions: {
+            wind_speed: Number(windSpeed),
+            air_density: 1.225,
+            scale: selectedScale,
+          },
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Error en síntesis generativa')
+      }
+
+      const data = await res.json()
+      setLastSynthesis(data)
+      setSelectedCandidate(data.candidate)
+      setCandidates((prev) => [data.candidate, ...prev])
+      setSelectedFamilyId(data.synthesis.family_id)
+      setLogMessage(`✨ ¡Diseño Generativo Sintetizado!: ${data.synthesis.title_code} (${data.synthesis.family_name}). Malla 3D renderizada.`)
+    } catch (err: any) {
+      console.error(err)
+      setLogMessage(`Error en síntesis generativa: ${err.message}`)
+    } finally {
+      setPromptLoading(false)
+    }
+  }
+
+  const handleSaveSynthesisAsTop = () => {
+    if (!lastSynthesis) return
+    const s = lastSynthesis.synthesis
+    const c = lastSynthesis.candidate
+    const newTop: SavedTopDesign = {
+      id: `${s.title_code}-${Date.now().toString().slice(-4)}`,
+      code: s.title_code,
+      title: `${s.title_code} — ${s.family_name}`,
+      familyId: s.family_id,
+      familyName: s.family_name,
+      scale: s.scale,
+      scaleLabel: s.scale === 'domestic' ? 'Doméstico' : s.scale === 'medium' ? 'Mediano' : 'Gran Escala',
+      candidate: c,
+      metrics: s.metrics,
+      parameters: s.parameters,
+      geometryHash: s.geometry_hash,
+      savedAt: new Date().toLocaleTimeString(),
+    }
+    setSavedTops((prev) => [newTop, ...prev.filter((t) => t.code !== s.title_code)])
+    setLogMessage(`⭐ Guardado en Tops: "${s.title_code}". ¡Ya disponible en el Comparador de Tops!`)
+  }
+
 
   const handleDeleteTop = (id: string) => {
     setSavedTops((prev) => prev.filter((t) => t.id !== id))
@@ -650,8 +790,13 @@ export default function App() {
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #0284c7', fontWeight: 600, marginBottom: 8 }}
               >
                 <option value="spherical_vawt">🌐 Turbina Esférica (Omnidireccional)</option>
-                <option value="hawt_conventional">🌬️ HAWT Clásico (Molino 2 o 3 Palas)</option>
+                <option value="hawt_conventional">🌬️ HAWT Clásico (Molino 3 Palas)</option>
                 <option value="savonius_vawt">🔄 Savonius (Eje Vertical - Arrastre)</option>
+                <option value="helical_gorlov">🌪️ Gorlov Helicoidal (Silenciosa - Azotea)</option>
+                <option value="wind_lens_ducted">🔍 Difusor Venturi (Wind Lens - Brisas)</option>
+                <option value="hybrid_savonius_darrieus">⚡ Híbrida Savonius-Darrieus (Doble Etapa)</option>
+                <option value="counter_rotating_crwt">🔄 Doble Rotor Contrarrotativo (CRWT)</option>
+                <option value="bionic_whale_tubercle">🐋 Bioinspirada (Tubérculos Ballena)</option>
               </select>
             </div>
 
@@ -823,6 +968,196 @@ export default function App() {
 
           {/* Columna Derecha: Laboratorio de Diseño, Visor 3D y Gráficos */}
           <div>
+            {/* SECCIÓN PROMPT: DISEÑO GENERATIVO ASISTIDO POR IA */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%)',
+                borderRadius: 8,
+                padding: 18,
+                marginBottom: 20,
+                border: '1px solid #8b5cf6',
+                boxShadow: '0 4px 20px rgba(139, 92, 246, 0.15)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>✨</span>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#c084fc' }}>
+                    Exploración Libre por Prompt (Diseño Generativo Asistido por IA)
+                  </h3>
+                  <span style={{ fontSize: 11, background: '#581c87', color: '#e9d5ff', padding: '2px 8px', borderRadius: 999, fontWeight: 600 }}>
+                    Experimental
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                  Escala activa: <strong style={{ color: '#6ee7b7' }}>{selectedScale === 'domestic' ? 'Doméstico (Rooftop)' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'}</strong>
+                </div>
+              </div>
+
+              <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#cbd5e1', lineHeight: 1.4 }}>
+                Describe en lenguaje natural cualquier arquitectura fuera de los modelos convencionales (ej: turbina helicoidal Gorlov silenciosa, difusor Venturi / Wind Lens, híbrida Savonius-Darrieus, contrarrotativa o bioinspirada). El motor sintetizará la geometría 3D, calculará su física y la cargará en el laboratorio.
+              </p>
+
+              {/* Botones de Atajo Rápido (Chips) */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                {[
+                  { label: '🌪️ Gorlov Helicoidal (Azotea Silenciosa)', prompt: 'Quiero una turbina helicoidal Gorlov de 3 palas con alta torsión para azotea urbana, ultra silenciosa y sin vibraciones' },
+                  { label: '🔍 Difusor Venturi (Wind Lens - Brisas)', prompt: 'Turbina con difusor y carenado Venturi tipo Wind Lens con pestaña anular para acelerar el viento y arrancar con brisas suaves' },
+                  { label: '⚡ Híbrida Savonius-Darrieus', prompt: 'Turbina híbrida de doble etapa con núcleo Savonius para alto par de arranque y palas exteriores Darrieus para alta velocidad' },
+                  { label: '🔄 Doble Rotor Contrarrotativo (CRWT)', prompt: 'Aerogenerador de doble rotor axial en tándem contrarrotativo para recuperar la estela y maximizar potencia' },
+                  { label: '🐋 Bioinspirada (Tubérculos Ballena)', prompt: 'Rotor con palas bioinspiradas con tubérculos sinusoidales de ballena jorobada para retrasar la pérdida aerodinámica' },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => {
+                      setPromptInput(chip.prompt)
+                    }}
+                    style={{
+                      background: '#1e293b',
+                      color: '#e2e8f0',
+                      border: '1px solid #475569',
+                      borderRadius: 999,
+                      padding: '4px 10px',
+                      fontSize: 11,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Campo de Entrada de Texto y Botón de Envío */}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <textarea
+                  value={promptInput}
+                  onChange={(e) => setPromptInput(e.target.value)}
+                  placeholder="Escribe aquí tu prompt (ej: 'Quiero una turbina helicoidal Gorlov de 1.1 metros de diámetro para techo de casa, muy silenciosa y de 3 palas')..."
+                  rows={2}
+                  style={{
+                    flex: 1,
+                    background: '#0f172a',
+                    color: '#f8fafc',
+                    border: '1px solid #6b21a8',
+                    borderRadius: 6,
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    fontFamily: 'inherit',
+                    resize: 'none',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleGenerateFromPrompt()}
+                  disabled={promptLoading || !promptInput.trim()}
+                  style={{
+                    padding: '12px 18px',
+                    borderRadius: 6,
+                    background: promptLoading ? '#4c1d95' : 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: promptLoading ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 2px 12px rgba(124, 58, 237, 0.4)',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {promptLoading ? '⏳ Sintetizando...' : '✨ Sintetizar 3D & Evaluar'}
+                </button>
+              </div>
+
+              {/* Tarjeta de Resultado Sintetizado si existe */}
+              {lastSynthesis && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    background: '#0f172a',
+                    border: '1px solid #a855f7',
+                    borderRadius: 6,
+                    padding: 12,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
+                        ⭐ {lastSynthesis.synthesis.title_code}
+                      </span>
+                      <span style={{ fontSize: 12, color: '#38bdf8' }}>
+                        ({lastSynthesis.synthesis.family_name})
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCandidate(lastSynthesis.candidate)
+                          setLogMessage(`Cargado en el Visor 3D: ${lastSynthesis.synthesis.title_code}`)
+                        }}
+                        style={{
+                          fontSize: 11,
+                          padding: '4px 10px',
+                          borderRadius: 4,
+                          background: '#0284c7',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        👁️ Ver en 3D
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveSynthesisAsTop}
+                        style={{
+                          fontSize: 11,
+                          padding: '4px 10px',
+                          borderRadius: 4,
+                          background: '#d97706',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        ⭐ Guardar como Top
+                      </button>
+                    </div>
+                  </div>
+
+                  <p style={{ margin: '0 0 8px 0', fontSize: 12, color: '#e2e8f0', lineHeight: 1.4, background: '#1e293b', padding: '8px 10px', borderRadius: 4, borderLeft: '3px solid #a855f7' }}>
+                    💡 <strong>Justificación Técnica:</strong> {lastSynthesis.synthesis.explanation}
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11 }}>
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>
+                      ⚡ Potencia: <strong>{lastSynthesis.synthesis.metrics.power_output} W</strong>
+                    </span>
+                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                      🎯 Cp: <strong>{lastSynthesis.synthesis.metrics.power_coefficient}</strong>
+                    </span>
+                    <span style={{ color: '#f43f5e', fontWeight: 600 }}>
+                      ⚖️ Masa: <strong>{lastSynthesis.synthesis.metrics.rotor_mass} kg</strong>
+                    </span>
+                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>
+                      🔄 Par Arranque: <strong>{lastSynthesis.synthesis.metrics.starting_torque} N·m</strong>
+                    </span>
+                    <span style={{ color: '#94a3b8' }}>
+                      RPM: <strong>{lastSynthesis.synthesis.metrics.nominal_rpm}</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Panel de Configuración Paramétrica */}
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, marginBottom: 20, border: '1px solid #334155' }}>
               <div style={{ marginBottom: 16 }}>
@@ -830,6 +1165,11 @@ export default function App() {
                   {selectedFamilyId === 'hawt_conventional' && `Molino HAWT — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala (Iberdrola)'}`}
                   {selectedFamilyId === 'savonius_vawt' && `Rotor Savonius — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
                   {selectedFamilyId === 'spherical_vawt' && `Turbina Esférica — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedFamilyId === 'helical_gorlov' && `Turbina Gorlov Helicoidal — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedFamilyId === 'wind_lens_ducted' && `Turbina Difusor Venturi (Wind Lens) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedFamilyId === 'hybrid_savonius_darrieus' && `Turbina Híbrida Savonius-Darrieus — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedFamilyId === 'counter_rotating_crwt' && `Doble Rotor Contrarrotativo (CRWT) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedFamilyId === 'bionic_whale_tubercle' && `Rotor Bioinspirado (Tubérculos) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
                 </h2>
                 <span style={{ fontSize: 12, color: '#94a3b8' }}>
                   {selectedScale === 'domestic' && 'Diámetro de 0.4 a 1.4m | Masa máx admisible: 25 kg | Potencia esperada: 50W - 400W (Rooftop seguro)'}
@@ -837,6 +1177,7 @@ export default function App() {
                   {selectedScale === 'large' && 'Diámetro de 15 a 55m | Masa: toneladas | Potencia esperada: 100kW - 2MW+ (Parque eólico / monte)'}
                 </span>
               </div>
+
 
               {/* Barra de Configuración de Optimización Evolutiva */}
               <div style={{ background: '#0f172a', borderRadius: 8, padding: '12px 16px', marginBottom: 18, border: '1px solid #d97706', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>

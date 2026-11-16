@@ -62,3 +62,10 @@ class EngineeringModule(ABC):
     ) -> EvaluationResult:
         """Evaluación rápida Nivel 1 (analítica / aproximación numérica de bajo coste)."""
         pass
+
+    def synthesize_from_prompt(
+        self, prompt: str, scale: str = "domestic", operating_conditions: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Sintetiza una arquitectura y parámetros a partir de una descripción en lenguaje natural."""
+        raise NotImplementedError("Este módulo no soporta síntesis generativa por prompt.")
+
