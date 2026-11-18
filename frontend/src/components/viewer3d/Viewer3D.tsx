@@ -12,9 +12,10 @@ interface Viewer3DProps {
 
 export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, metrics, familyId }) => {
   const mountRef = useRef<HTMLDivElement>(null)
+  const isTrauma = familyId?.includes('cutting_guide') || false
   const [wireframe, setWireframe] = useState(false)
   const [autoRotate, setAutoRotate] = useState(false)
-  const [showHuman, setShowHuman] = useState(true)
+  const [showHuman, setShowHuman] = useState(!isTrauma)
   const [fixedScale, setFixedScale] = useState(false)
   const [loading, setLoading] = useState(false)
   const [dimensions, setDimensions] = useState<{ width: number; height: number; depth: number } | null>(null)
@@ -337,8 +338,8 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
           position: 'absolute',
           top: 12,
           right: 12,
-          background: 'rgba(15, 23, 42, 0.88)',
-          border: '1px solid #38bdf8',
+          background: 'rgba(15, 23, 42, 0.92)',
+          border: isTrauma ? '1px solid #10b981' : '1px solid #38bdf8',
           borderRadius: 8,
           padding: '10px 14px',
           color: '#f8fafc',
@@ -346,19 +347,51 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
           fontFamily: 'monospace',
           backdropFilter: 'blur(4px)',
           zIndex: 10,
-          maxWidth: 240,
+          maxWidth: 260,
         }}>
-          <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: 4, fontSize: 12 }}>
-            📐 COTAS FÍSICAS REALES {familyId ? `— ${familyId === 'spherical_vawt' ? 'Esférica' : familyId === 'hawt_conventional' ? 'HAWT' : 'Savonius'}` : ''}
-          </div>
-          <div>Diámetro D: <strong style={{ color: '#fff' }}>{diameterMm} mm ({(diameterMm / 1000).toFixed(2)} m)</strong></div>
-          {heightMm > 0 && <div>Altura H: <strong style={{ color: '#fff' }}>{heightMm} mm ({(heightMm / 1000).toFixed(2)} m)</strong></div>}
-          {blades > 0 && <div>Palas / Álabes: <strong style={{ color: '#fff' }}>{blades}</strong></div>}
-          {powerW !== null && <div>Potencia: <strong style={{ color: '#10b981' }}>{powerW >= 1000 ? `${(powerW / 1000).toFixed(2)} kW` : `${powerW.toFixed(1)} W`}</strong></div>}
-          {massKg !== null && <div>Masa Rotor: <strong style={{ color: '#f59e0b' }}>{massKg >= 1000 ? `${(massKg / 1000).toFixed(2)} t` : `${massKg.toFixed(1)} kg`}</strong></div>}
-          <div style={{ borderTop: '1px solid #334155', marginTop: 6, paddingTop: 4, color: '#94a3b8', fontSize: 10 }}>
-            {diameterMm < 1000 ? 'Rotor compacto (bajo la rodilla humana)' : diameterMm < 2000 ? 'Escala similar a estatura humana' : 'Rotor gigante (supera la altura humana)'}
-          </div>
+          {isTrauma ? (
+            <>
+              <div style={{ fontWeight: 700, color: '#10b981', marginBottom: 4, fontSize: 12 }}>
+                🩺 INSTRUMENTAL PSI (QUIRÓFANO)
+              </div>
+              <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: 4 }}>
+                {familyId === 'distal_femur_cutting_guide' ? 'Guía Fémur Distal (Zero-Rocking)' : 'Guía Tibia Proximal (Slope)'}
+              </div>
+              <div>Cotas Totales: <strong style={{ color: '#fff' }}>{dimensions.width.toFixed(0)} × {dimensions.depth.toFixed(0)} × {dimensions.height.toFixed(0)} mm</strong></div>
+              {parameters?.valgus_angle_deg !== undefined && (
+                <div>Ángulo Valgo: <strong style={{ color: '#38bdf8' }}>{parameters.valgus_angle_deg}°</strong></div>
+              )}
+              {parameters?.posterior_slope_deg !== undefined && (
+                <div>Slope Posterior: <strong style={{ color: '#38bdf8' }}>{parameters.posterior_slope_deg}°</strong></div>
+              )}
+              {parameters?.resection_thickness_mm !== undefined && (
+                <div>Resección: <strong style={{ color: '#fff' }}>{parameters.resection_thickness_mm} mm</strong></div>
+              )}
+              {metrics?.slot_deflection_mm !== undefined && (
+                <div>Deflexión Sierra: <strong style={{ color: metrics.slot_deflection_mm < 0.1 ? '#10b981' : '#f43f5e' }}>{metrics.slot_deflection_mm.toFixed(3)} mm</strong></div>
+              )}
+              {metrics?.material_cost_eur !== undefined && (
+                <div>Coste Resina: <strong style={{ color: '#f59e0b' }}>~{metrics.material_cost_eur.toFixed(2)} €</strong> ({metrics.resin_volume_ml?.toFixed(0)} ml)</div>
+              )}
+              <div style={{ borderTop: '1px solid #334155', marginTop: 6, paddingTop: 4, color: '#94a3b8', fontSize: 10 }}>
+                Biocompatible ISO 10993 | Autoclave 121 °C
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: 4, fontSize: 12 }}>
+                📐 COTAS FÍSICAS REALES {familyId ? `— ${familyId === 'spherical_vawt' ? 'Esférica' : familyId === 'hawt_conventional' ? 'HAWT' : 'Savonius'}` : ''}
+              </div>
+              <div>Diámetro D: <strong style={{ color: '#fff' }}>{diameterMm} mm ({(diameterMm / 1000).toFixed(2)} m)</strong></div>
+              {heightMm > 0 && <div>Altura H: <strong style={{ color: '#fff' }}>{heightMm} mm ({(heightMm / 1000).toFixed(2)} m)</strong></div>}
+              {blades > 0 && <div>Palas / Álabes: <strong style={{ color: '#fff' }}>{blades}</strong></div>}
+              {powerW !== null && <div>Potencia: <strong style={{ color: '#10b981' }}>{powerW >= 1000 ? `${(powerW / 1000).toFixed(2)} kW` : `${powerW.toFixed(1)} W`}</strong></div>}
+              {massKg !== null && <div>Masa Rotor: <strong style={{ color: '#f59e0b' }}>{massKg >= 1000 ? `${(massKg / 1000).toFixed(2)} t` : `${massKg.toFixed(1)} kg`}</strong></div>}
+              <div style={{ borderTop: '1px solid #334155', marginTop: 6, paddingTop: 4, color: '#94a3b8', fontSize: 10 }}>
+                {diameterMm < 1000 ? 'Rotor compacto (bajo la rodilla humana)' : diameterMm < 2000 ? 'Escala similar a estatura humana' : 'Rotor gigante (supera la altura humana)'}
+              </div>
+            </>
+          )}
         </div>
       )}
 
