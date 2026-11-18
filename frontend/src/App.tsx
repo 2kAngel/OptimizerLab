@@ -1708,8 +1708,30 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                         gap: 4,
                       }}
                     >
-                      🦴 Cargar TAC Clínico de Referencia (Demo)
+                      🦴 Cargar TAC Clínico Directo (1 Clic)
                     </button>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                      <a
+                        href={`/api/traumatology/download-sample-scan?scan_type=${selectedFamilyId.includes('tibia') ? 'tibia' : 'femur'}&is_right=${prescribedLaterality === 'right'}`}
+                        download={selectedFamilyId.includes('tibia') ? (prescribedLaterality === 'right' ? 'PACIENTE_TIBIA_PROXIMAL_DERECHA.stl' : 'PACIENTE_TIBIA_PROXIMAL_IZQUIERDA.stl') : (prescribedLaterality === 'right' ? 'PACIENTE_FEMUR_DISTAL_DERECHO.stl' : 'PACIENTE_FEMUR_DISTAL_IZQUIERDO.stl')}
+                        style={{
+                          flex: 1,
+                          padding: '5px 8px',
+                          borderRadius: 4,
+                          background: 'rgba(56, 189, 248, 0.12)',
+                          color: '#38bdf8',
+                          border: '1px solid rgba(56, 189, 248, 0.35)',
+                          fontSize: 10,
+                          fontWeight: 600,
+                          textAlign: 'center',
+                          textDecoration: 'none',
+                          display: 'inline-block',
+                        }}
+                        title="Descarga este archivo STL a tu ordenador para probar a arrastrarlo y verificar el análisis de lateralidad y cotas"
+                      >
+                        📥 Descargar STL Hueso Paciente (Para Arrastrar)
+                      </a>
+                    </div>
                   </div>
 
                   {/* Estado de Seguridad Pre-Quirúrgica */}

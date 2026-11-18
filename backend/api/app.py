@@ -365,6 +365,29 @@ async def upload_scan(file: UploadFile = File(...)):
     return BoneAnatomyService.process_bone_mesh_file(contents, file.filename or "patient_scan.stl")
 
 
+@app.get("/api/traumatology/download-sample-scan")
+def download_sample_scan(scan_type: str = "femur", is_right: bool = True):
+    """Permite al usuario descargar directamente una malla STL anatómica de paciente de muestra."""
+    from modules.traumatology_psi.bone_service import BoneAnatomyService
+    import io
+    from fastapi.responses import Response
+
+    if "tibia" in scan_type.lower():
+        bone = BoneAnatomyService.create_reference_proximal_tibia(width_ml=74.0, is_right=is_right)
+        fname = f"PACIENTE_TIBIA_PROXIMAL_{'DERECHA' if is_right else 'IZQUIERDA'}.stl"
+    else:
+        bone = BoneAnatomyService.create_reference_distal_femur(width_ml=72.0, depth_ap=62.0, is_right=is_right)
+        fname = f"PACIENTE_FEMUR_DISTAL_{'DERECHO' if is_right else 'IZQUIERDO'}.stl"
+
+    buf = io.BytesIO()
+    bone.export(buf, file_type="stl")
+    return Response(
+        content=buf.getvalue(),
+        media_type="model/stl",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # --- Geometría y Exportación 3D ---
 
 @app.get("/api/geometry/{geometry_hash}/glb")
