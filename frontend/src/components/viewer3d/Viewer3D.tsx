@@ -16,7 +16,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
   const [wireframe, setWireframe] = useState(false)
   const [autoRotate, setAutoRotate] = useState(false)
   const [showHuman, setShowHuman] = useState(!isTrauma)
-  const [fixedScale, setFixedScale] = useState(false)
   const [loading, setLoading] = useState(false)
   const [dimensions, setDimensions] = useState<{ width: number; height: number; depth: number } | null>(null)
 
@@ -24,6 +23,72 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
   const humanRef = useRef<THREE.Group | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const targetCenterRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 35))
+  const optimalDistRef = useRef<number>(150)
+
+  // Función para enfocar, hacer zoom y centrar el objeto en el medio
+  const handleFocusAndCenter = () => {
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!camera || !controls) return
+
+    const mesh = currentMeshRef.current
+    if (mesh) {
+      const box = new THREE.Box3().setFromObject(mesh)
+      const center = box.getCenter(new THREE.Vector3())
+      const size = box.getSize(new THREE.Vector3())
+      const maxDim = Math.max(size.x, size.y, size.z) || (isTrauma ? 80 : 1000)
+
+      // Guardar el centro y distancia calculados
+      targetCenterRef.current.copy(center)
+      const fovRad = THREE.MathUtils.degToRad(camera.fov)
+      const dist = (maxDim / 2) / Math.tan(fovRad / 2) * 1.55
+      optimalDistRef.current = dist
+
+      // Configurar el objetivo de órbita exactamente en el centro de la pieza
+      controls.target.copy(center)
+
+      // Colocar cámara con encuadre óptimo (~70% de la pantalla)
+      camera.position.set(center.x + dist * 0.75, center.y - dist * 1.05, center.z + dist * 0.65)
+      camera.near = Math.max(0.5, dist * 0.01)
+      camera.far = Math.max(10000, dist * 50)
+      camera.updateProjectionMatrix()
+      controls.update()
+    } else {
+      controls.target.set(0, 0, 35)
+      camera.position.set(110, -140, 90)
+      camera.updateProjectionMatrix()
+      controls.update()
+    }
+  }
+
+  // Actualizar autoRotate de forma reactiva sin destruir la escena
+  useEffect(() => {
+    if (controlsRef.current) {
+      controlsRef.current.autoRotate = autoRotate
+    }
+  }, [autoRotate])
+
+  // Actualizar modo alámbrico de forma reactiva sin destruir la escena
+  useEffect(() => {
+    if (currentMeshRef.current) {
+      currentMeshRef.current.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh
+          if (m.material && (m.material as THREE.MeshStandardMaterial).wireframe !== undefined) {
+            (m.material as THREE.MeshStandardMaterial).wireframe = wireframe
+          }
+        }
+      })
+    }
+  }, [wireframe])
+
+  // Actualizar visibilidad de la figura humana reactivamente
+  useEffect(() => {
+    if (humanRef.current) {
+      humanRef.current.visible = showHuman
+    }
+  }, [showHuman])
 
   // Crear silueta humana estilizada de 1.75m (1750mm) de referencia
   const createHumanFigure = () => {
@@ -90,11 +155,12 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#070b14')
 
-    // 2. Cámara
+    // 2. Cámara (Z como eje vertical superior)
     const width = container.clientWidth
     const height = container.clientHeight
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 1000000)
-    camera.position.set(3000, -3500, 2500)
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.5, 1000000)
+    camera.up.set(0, 0, 1) // Eje Z vertical para instrumental y CAD
+    camera.position.set(120, -150, 100)
     cameraRef.current = camera
 
     // 3. Renderizador
@@ -104,23 +170,23 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
     renderer.shadowMap.enabled = true
     container.replaceChildren(renderer.domElement)
 
-    // 4. Controles de órbita
+    // 4. Controles de órbita (giran alrededor del target central de la pieza)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
-    controls.dampingFactor = 0.05
+    controls.dampingFactor = 0.08
     controls.autoRotate = autoRotate
-    controls.autoRotateSpeed = 2.0
+    controls.autoRotateSpeed = 2.5
     controlsRef.current = controls
 
     // 5. Luces
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85)
     scene.add(ambientLight)
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.4)
     dirLight.position.set(6000, 8000, 10000)
     scene.add(dirLight)
 
-    const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.6)
+    const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.7)
     fillLight.position.set(-6000, -4000, -4000)
     scene.add(fillLight)
 
@@ -154,15 +220,15 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
               if ((child as THREE.Mesh).isMesh) {
                 const m = child as THREE.Mesh
                 m.material = new THREE.MeshStandardMaterial({
-                  color: 0x38bdf8,
+                  color: isTrauma ? 0x38bdf8 : 0x0284c7,
                   metalness: 0.25,
-                  roughness: 0.4,
+                  roughness: 0.35,
                   wireframe: wireframe,
                 })
               }
             })
 
-            // Centrar objeto sobre el origen Z=0
+            // Centrar objeto sobre el origen X=0, Y=0 y base Z=0
             const box = new THREE.Box3().setFromObject(object)
             const center = box.getCenter(new THREE.Vector3())
             const size = box.getSize(new THREE.Vector3())
@@ -172,8 +238,9 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
               depth: Math.round(size.z),
             })
 
-            const maxDim = Math.max(size.x, size.y, size.z) || 1000
+            const maxDim = Math.max(size.x, size.y, size.z) || (isTrauma ? 80 : 1000)
 
+            // Centrar geométricamente para que el pivote sea el origen
             object.position.x -= center.x
             object.position.y -= center.y
             object.position.z -= box.min.z
@@ -181,33 +248,39 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
             scene.add(object)
             currentMeshRef.current = object
 
-            // Silueta Humana de Referencia (1.75m) al lado
-            if (showHuman) {
+            // Centro geométrico vertical del objeto
+            const targetZ = size.z / 2
+            targetCenterRef.current.set(0, 0, targetZ)
+
+            // Silueta humana solo en eólica si está activada
+            if (showHuman && !isTrauma) {
               const human = createHumanFigure()
-              // Colocar a la derecha del modelo a una distancia proporcional
               const offsetSide = Math.max(maxDim * 0.65, 800)
               human.position.set(offsetSide, 0, 0)
               scene.add(human)
               humanRef.current = human
             }
 
-            // Cuadrícula métrica en el suelo
-            const gridExtent = Math.max(maxDim * 2.5, 3500)
-            gridHelper = new THREE.GridHelper(gridExtent, 24, 0x38bdf8, 0x1e293b)
+            // Cuadrícula métrica proporcional (en Traumatología cuadrícula de ~14 cm con pasos de 1 cm)
+            const gridExtent = isTrauma ? Math.max(maxDim * 2.2, 140) : Math.max(maxDim * 2.5, 3500)
+            const gridDivisions = isTrauma ? 14 : 24
+            gridHelper = new THREE.GridHelper(gridExtent, gridDivisions, isTrauma ? 0x10b981 : 0x38bdf8, 0x1e293b)
             gridHelper.rotation.x = Math.PI / 2
             gridHelper.position.z = 0
             scene.add(gridHelper)
 
-            // Posicionamiento de cámara:
-            if (fixedScale) {
-              // Vista fija para apreciar diferencias reales de tamaño entre modelos
-              camera.position.set(3500, -4200, 2800)
-              controls.target.set(0, 0, 1000)
-            } else {
-              // Auto-encuadre proporcional al objeto
-              camera.position.set(maxDim * 1.5, -maxDim * 1.8, maxDim * 1.2 + 200)
-              controls.target.set(0, 0, maxDim * 0.45)
-            }
+            // Posicionamiento de cámara óptimo centrado con zoom directo
+            const fovRad = THREE.MathUtils.degToRad(camera.fov)
+            const dist = (maxDim / 2) / Math.tan(fovRad / 2) * 1.55
+            optimalDistRef.current = dist
+
+            camera.position.set(dist * 0.75, -dist * 1.05, targetZ + dist * 0.65)
+            camera.near = Math.max(0.5, dist * 0.01)
+            camera.far = Math.max(10000, dist * 50)
+            camera.updateProjectionMatrix()
+
+            // Fijar el objetivo de rotación exactamente en el centro de la pieza
+            controls.target.set(0, 0, targetZ)
             controls.update()
             setLoading(false)
           },
@@ -222,11 +295,10 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
 
     loadGeometry()
 
-    // 7. Bucle de animación
+    // 7. Bucle de animación (usa controls.update() para autoRotate suave)
     let animationFrameId: number
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate)
-      controls.autoRotate = autoRotate
       controls.update()
       renderer.render(scene, camera)
     }
@@ -248,7 +320,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
       window.removeEventListener('resize', handleResize)
       renderer.dispose()
     }
-  }, [geometryHash, wireframe, autoRotate, showHuman, fixedScale])
+  }, [geometryHash, familyId])
 
   const diameterMm = parameters?.rotor_diameter || dimensions?.width || 0
   const heightMm = parameters?.rotor_height || parameters?.tower_height || dimensions?.depth || 0
@@ -261,11 +333,52 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
 
       {/* Controles superiores izquierda */}
-      <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', gap: 8, zIndex: 10 }}>
+      <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', gap: 8, zIndex: 10, flexWrap: 'wrap' }}>
+        <button
+          onClick={handleFocusAndCenter}
+          style={{
+            padding: '6px 14px',
+            borderRadius: 6,
+            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+            color: '#fff',
+            border: '1px solid #38bdf8',
+            fontSize: 12,
+            cursor: 'pointer',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.45)',
+          }}
+          title="Centra la pieza 3D en el medio de la pantalla, hace zoom óptimo y alinea el eje de rotación sobre su centro"
+        >
+          🎯 Enfocar y Centrar
+        </button>
+
+        <button
+          onClick={() => setAutoRotate(!autoRotate)}
+          style={{
+            padding: '6px 14px',
+            borderRadius: 6,
+            background: autoRotate ? '#10b981' : '#1e293b',
+            color: '#fff',
+            border: autoRotate ? '1px solid #34d399' : '1px solid #475569',
+            fontSize: 12,
+            cursor: 'pointer',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+          title="Hace rotar el modelo suavemente 360° sobre su propio eje central"
+        >
+          🔄 {autoRotate ? 'Pausar Rotación' : 'Auto Rotar'}
+        </button>
+
         <button
           onClick={() => setWireframe(!wireframe)}
           style={{
-            padding: '5px 12px',
+            padding: '6px 12px',
             borderRadius: 6,
             background: wireframe ? '#0284c7' : '#1e293b',
             color: '#fff',
@@ -278,58 +391,27 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
           {wireframe ? 'Modo Sólido' : 'Modo Alámbrico'}
         </button>
 
-        <button
-          onClick={() => setAutoRotate(!autoRotate)}
-          style={{
-            padding: '5px 12px',
-            borderRadius: 6,
-            background: autoRotate ? '#10b981' : '#1e293b',
-            color: '#fff',
-            border: '1px solid #475569',
-            fontSize: 12,
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          {autoRotate ? 'Pausar Rotación' : 'Auto Rotar'}
-        </button>
-
-        <button
-          onClick={() => setShowHuman(!showHuman)}
-          style={{
-            padding: '5px 12px',
-            borderRadius: 6,
-            background: showHuman ? '#d97706' : '#1e293b',
-            color: '#fff',
-            border: '1px solid #f59e0b',
-            fontSize: 12,
-            cursor: 'pointer',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-          title="Muestra u oculta la silueta humana de 1.75m para comparar el tamaño real"
-        >
-          🧍 {showHuman ? 'Escala Humana (1.75m)' : 'Ver Escala Humana'}
-        </button>
-
-        <button
-          onClick={() => setFixedScale(!fixedScale)}
-          style={{
-            padding: '5px 12px',
-            borderRadius: 6,
-            background: fixedScale ? '#7c3aed' : '#1e293b',
-            color: '#fff',
-            border: '1px solid #a855f7',
-            fontSize: 12,
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-          title="Fija la cámara para que modelos pequeños se vean pequeños y modelos grandes se vean grandes"
-        >
-          🔍 {fixedScale ? 'Escala 1:1 (Fija)' : 'Auto-Enfocar'}
-        </button>
+        {!isTrauma && (
+          <button
+            onClick={() => setShowHuman(!showHuman)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 6,
+              background: showHuman ? '#d97706' : '#1e293b',
+              color: '#fff',
+              border: '1px solid #f59e0b',
+              fontSize: 12,
+              cursor: 'pointer',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Muestra u oculta la silueta humana de 1.75m para comparar el tamaño real"
+          >
+            🧍 {showHuman ? 'Escala Humana (1.75m)' : 'Ver Escala Humana'}
+          </button>
+        )}
       </div>
 
       {/* HUD de Dimensiones Reales (Superior Derecha) */}
