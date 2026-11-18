@@ -794,7 +794,11 @@ export default function App() {
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#38bdf8' }}>DESIGNLAB</h1>
             <span style={{ fontSize: 11, background: '#0369a1', color: '#e0f2fe', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>v0.2.0 Benchmarking</span>
           </div>
-          <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: 13 }}>Laboratorio Eólico Multiescala con Comparativa Cruzada y Referencias Físicas</p>
+          <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: 13 }}>
+            {selectedModuleId === 'traumatology_psi'
+              ? 'Plataforma de Instrumental Específico de Paciente (PSI) — Planificación Quirúrgica Submilimétrica'
+              : 'Laboratorio Eólico Multiescala con Comparativa Cruzada y Referencias Físicas'}
+          </p>
         </div>
 
         {/* Pestañas Principales */}
@@ -841,7 +845,9 @@ export default function App() {
           <span style={{ padding: '4px 10px', borderRadius: 999, background: health?.status === 'healthy' ? '#064e3b' : '#7f1d1d', color: health?.status === 'healthy' ? '#6ee7b7' : '#fca5a5' }}>
             Backend: {health?.status === 'healthy' ? 'ONLINE (WAL)' : 'OFFLINE'}
           </span>
-          <div style={{ color: '#64748b', marginTop: 4 }}>3 Escalas | Multi-Arquitectura</div>
+          <div style={{ color: '#64748b', marginTop: 4 }}>
+            {selectedModuleId === 'traumatology_psi' ? 'Técnica Extramedular | Resina ISO 10993' : '3 Escalas | Multi-Arquitectura'}
+          </div>
         </div>
       </header>
 
@@ -1069,7 +1075,58 @@ export default function App() {
 
           {/* Columna Derecha: Laboratorio de Diseño, Visor 3D y Gráficos */}
           <div>
-            {/* SECCIÓN PROMPT: DISEÑO GENERATIVO ASISTIDO POR IA */}
+            {/* Si es traumatología: Panel Clínico de Alta Precisión; si no: Exploración por Prompt */}
+            {selectedModuleId === 'traumatology_psi' ? (
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #0c4a6e 0%, #0f172a 100%)',
+                  borderRadius: 8,
+                  padding: 18,
+                  marginBottom: 20,
+                  border: '1px solid #0284c7',
+                  boxShadow: '0 4px 20px rgba(2, 132, 199, 0.15)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>🩺</span>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#38bdf8' }}>
+                      Prescripción Quirúrgica Específica de Paciente (Protocolo de Alta Precisión)
+                    </h3>
+                    <span style={{ fontSize: 11, background: '#0369a1', color: '#e0f2fe', padding: '2px 8px', borderRadius: 999, fontWeight: 600 }}>
+                      MDR Dispositivo a Medida
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    Técnica: <strong style={{ color: '#38bdf8' }}>Extramedular Pura (Sin perforación ósea de varilla)</strong>
+                  </div>
+                </div>
+
+                <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#cbd5e1', lineHeight: 1.4 }}>
+                  En traumatología reconstructiva <strong>cada milímetro y grado cuenta</strong>. Los parámetros se configuran con exactitud matemática a partir del TAC del paciente. El motor geométrico genera el apoyo isostático <em>Zero-Rocking</em> en cortical dura, posiciona las torres para agujas Kirschner de 3.2 mm y dimensiona las nervaduras para absorber 40 N a 15.000 CPM sin flexión.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, fontSize: 11 }}>
+                  <div style={{ background: '#0f172a', padding: '8px 10px', borderRadius: 6, border: '1px solid #1e293b' }}>
+                    <div style={{ color: '#94a3b8' }}>Normativa Biomédica</div>
+                    <div style={{ color: '#38bdf8', fontWeight: 600, marginTop: 2 }}>ISO 10993 / MDR Clase I</div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '8px 10px', borderRadius: 6, border: '1px solid #1e293b' }}>
+                    <div style={{ color: '#94a3b8' }}>Tolerancia Mecánica</div>
+                    <div style={{ color: '#10b981', fontWeight: 600, marginTop: 2 }}>Submilimétrica (&lt; 0.10 mm)</div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '8px 10px', borderRadius: 6, border: '1px solid #1e293b' }}>
+                    <div style={{ color: '#94a3b8' }}>Esterilización Validada</div>
+                    <div style={{ color: '#f59e0b', fontWeight: 600, marginTop: 2 }}>Autoclave vapor 121 °C</div>
+                  </div>
+                  <div style={{ background: '#0f172a', padding: '8px 10px', borderRadius: 6, border: '1px solid #1e293b' }}>
+                    <div style={{ color: '#94a3b8' }}>Tiempo Quirófano Ahorrado</div>
+                    <div style={{ color: '#a855f7', fontWeight: 600, marginTop: 2 }}>~22 minutos / paciente</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+            /* SECCIÓN PROMPT: DISEÑO GENERATIVO ASISTIDO POR IA */
             <div
               style={{
                 background: 'linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%)',
@@ -1259,25 +1316,40 @@ export default function App() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Panel de Configuración Paramétrica */}
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, marginBottom: 20, border: '1px solid #334155' }}>
               <div style={{ marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: 18, color: '#f8fafc' }}>
-                  {selectedFamilyId === 'hawt_conventional' && `Molino HAWT — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala (Iberdrola)'}`}
-                  {selectedFamilyId === 'savonius_vawt' && `Rotor Savonius — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
-                  {selectedFamilyId === 'spherical_vawt' && `Turbina Esférica — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
-                  {selectedFamilyId === 'conical_drill_vane' && `Turbina Cónica Tipo Taladro (Broca Veleta) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
-                  {selectedFamilyId === 'helical_gorlov' && `Turbina Gorlov Helicoidal — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
-                  {selectedFamilyId === 'wind_lens_ducted' && `Turbina Difusor Venturi (Wind Lens) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
-                  {selectedFamilyId === 'hybrid_savonius_darrieus' && `Turbina Híbrida Savonius-Darrieus — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
-                  {selectedFamilyId === 'counter_rotating_crwt' && `Doble Rotor Contrarrotativo (CRWT) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
-                  {selectedFamilyId === 'bionic_whale_tubercle' && `Rotor Bioinspirado (Tubérculos) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                  {selectedModuleId === 'traumatology_psi' ? (
+                    selectedFamilyId === 'distal_femur_cutting_guide'
+                      ? 'Guía de Corte Femoral Distal — Alineación Extramedular Zero-Rocking'
+                      : 'Guía de Corte Tibial Proximal — Slope Anatómico Ajustable'
+                  ) : (
+                    <>
+                      {selectedFamilyId === 'hawt_conventional' && `Molino HAWT — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala (Iberdrola)'}`}
+                      {selectedFamilyId === 'savonius_vawt' && `Rotor Savonius — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                      {selectedFamilyId === 'spherical_vawt' && `Turbina Esférica — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                      {selectedFamilyId === 'conical_drill_vane' && `Turbina Cónica Tipo Taladro (Broca Veleta) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                      {selectedFamilyId === 'helical_gorlov' && `Turbina Gorlov Helicoidal — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                      {selectedFamilyId === 'wind_lens_ducted' && `Turbina Difusor Venturi (Wind Lens) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                      {selectedFamilyId === 'hybrid_savonius_darrieus' && `Turbina Híbrida Savonius-Darrieus — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                      {selectedFamilyId === 'counter_rotating_crwt' && `Doble Rotor Contrarrotativo (CRWT) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                      {selectedFamilyId === 'bionic_whale_tubercle' && `Rotor Bioinspirado (Tubérculos) — Escala ${selectedScale === 'domestic' ? 'Doméstica' : selectedScale === 'medium' ? 'Mediana' : 'Gran Escala'}`}
+                    </>
+                  )}
                 </h2>
                 <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                  {selectedScale === 'domestic' && 'Diámetro de 0.4 a 1.4m | Masa máx admisible: 25 kg | Potencia esperada: 50W - 400W (Rooftop seguro)'}
-                  {selectedScale === 'medium' && 'Diámetro de 1.5 a 6.5m | Masa máx admisible: 180 kg | Potencia esperada: 1.5kW - 12kW (Naves y parques)'}
-                  {selectedScale === 'large' && 'Diámetro de 15 a 55m | Masa: toneladas | Potencia esperada: 100kW - 2MW+ (Parque eólico / monte)'}
+                  {selectedModuleId === 'traumatology_psi' ? (
+                    'Precisión angular objetivo: < 0.5° | Fuerza sierra: 40 N @ 15.000 CPM | Límite deflexión: < 0.10 mm | Resina médica biocompatible ISO 10993'
+                  ) : (
+                    <>
+                      {selectedScale === 'domestic' && 'Diámetro de 0.4 a 1.4m | Masa máx admisible: 25 kg | Potencia esperada: 50W - 400W (Rooftop seguro)'}
+                      {selectedScale === 'medium' && 'Diámetro de 1.5 a 6.5m | Masa máx admisible: 180 kg | Potencia esperada: 1.5kW - 12kW (Naves y parques)'}
+                      {selectedScale === 'large' && 'Diámetro de 15 a 55m | Masa: toneladas | Potencia esperada: 100kW - 2MW+ (Parque eólico / monte)'}
+                    </>
+                  )}
                 </span>
               </div>
 
@@ -1537,7 +1609,9 @@ export default function App() {
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, marginBottom: 20, border: '1px solid #334155' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <h3 style={{ margin: 0, fontSize: 16, color: '#f8fafc' }}>
-                  Comparativa Multi-Objetivo: Frente de Pareto ({paretoPoints.filter((p) => p.isPareto).length} Óptimos)
+                  {selectedModuleId === 'traumatology_psi'
+                    ? `Frente de Pareto Biomecánico: Estabilidad vs Volumen de Resina (${paretoPoints.filter((p) => p.isPareto).length} Óptimos)`
+                    : `Comparativa Multi-Objetivo: Frente de Pareto (${paretoPoints.filter((p) => p.isPareto).length} Óptimos)`}
                 </h3>
                 {selectedCandidate && (
                   <button
@@ -1561,7 +1635,9 @@ export default function App() {
                 )}
               </div>
               <p style={{ margin: '0 0 14px 0', fontSize: 12, color: '#94a3b8' }}>
-                Compara la <strong>Potencia Mecánica</strong> frente a la <strong>Masa del Conjunto</strong>. Haz clic en los puntos verdes para cargar cualquier diseño en el Visor 3D.
+                {selectedModuleId === 'traumatology_psi'
+                  ? 'Compara la Rigidez / Estabilidad de Corte frente al Volumen de Resina (Tiempo de Impresión 3D). Haz clic en los puntos verdes para cargar la guía en el Visor 3D.'
+                  : 'Compara la Potencia Mecánica frente a la Masa del Conjunto. Haz clic en los puntos verdes para cargar cualquier diseño en el Visor 3D.'}
               </p>
               <ParetoChart
                 points={paretoPoints}
@@ -1575,7 +1651,9 @@ export default function App() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16, color: '#f8fafc' }}>
-                    Visor 3D — {selectedCandidate?.parameters?.blade_count ? `${selectedCandidate.parameters.blade_count} Palas / Álabes` : ''} {selectedCandidate ? `(Candidato #${selectedCandidate.index})` : ''}
+                    {selectedModuleId === 'traumatology_psi'
+                      ? `Visor 3D — Guía Quirúrgica PSI ${selectedCandidate ? `(Variante #${selectedCandidate.index})` : ''}`
+                      : `Visor 3D — ${selectedCandidate?.parameters?.blade_count ? `${selectedCandidate.parameters.blade_count} Palas / Álabes` : ''} ${selectedCandidate ? `(Candidato #${selectedCandidate.index})` : ''}`}
                   </h3>
                   <span style={{ fontSize: 12, color: '#38bdf8', fontWeight: 600 }}>
                     {selectedCandidate ? generateTopCode(selectedCandidate) : ''}
