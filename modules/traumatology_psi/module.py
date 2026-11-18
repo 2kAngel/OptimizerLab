@@ -347,24 +347,38 @@ class TraumatologyPsiModule(EngineeringModule):
             # Resta aproximada o visualización de ranura
             meshes.append(block)
 
-            # --- 2. CUNA ANATÓMICA DE APOYO CONDILAR "ZERO-ROCKING" ---
-            # Dos cóndilos femorales (Medial y Lateral) como cúpulas de referencia anatómica
-            condyle_radius = w_ml * 0.22
+            # --- 2. CUNA ANATÓMICA Y ARCO CONDILAR TIPO PUZZLE ("ZERO-ROCKING") ---
+            # Arco envolvente continuo que abraza los cóndilos femorales con ventana de inspección
             condyle_span = w_ml * 0.44
+            bridge_th = wall_th * 1.2
+            bridge_w = w_ml * 0.82
+            bridge_d = d_ap * 0.55
 
-            # Cóndilo Medial
-            pad_medial = trimesh.creation.icosphere(radius=condyle_radius, subdivisions=2)
-            pad_medial.apply_translation([condyle_span / 2.0, d_ap * 0.25, 0.0])
+            # Arco anatómico principal curvado
+            arch_bridge = trimesh.creation.cylinder(radius=bridge_w / 2.0, height=bridge_th, sections=32)
+            arch_bridge.apply_scale([1.0, 0.75, 1.0])
+            arch_bridge.apply_translation([0.0, d_ap * 0.35, block_height * 0.4])
 
-            # Cóndilo Lateral
-            pad_lateral = trimesh.creation.icosphere(radius=condyle_radius * 0.95, subdivisions=2)
-            pad_lateral.apply_translation([-condyle_span / 2.0, d_ap * 0.25, 0.0])
+            # Ventana de inspección ósea central (Bone-Check Window) para verificar contacto
+            window_r = w_ml * 0.16
+            window = trimesh.creation.cylinder(radius=window_r, height=bridge_th * 1.5, sections=20)
+            window.apply_translation([0.0, d_ap * 0.35, block_height * 0.4])
 
-            # Apoyo troclear anterior (tercer punto del trípode isostático)
-            pad_trochlea = trimesh.creation.cylinder(radius=condyle_radius * 0.5, height=wall_th * 2.0)
-            pad_trochlea.apply_translation([0.0, d_ap * 0.55, block_height * 0.3])
+            # Apoyos condilares anatómicos moldeados en cóndilos medial y lateral
+            condyle_radius = w_ml * 0.20
+            pad_medial = trimesh.creation.icosphere(radius=condyle_radius, subdivisions=3)
+            pad_medial.apply_scale([0.85, 1.25, 0.65])
+            pad_medial.apply_translation([condyle_span / 2.0, d_ap * 0.28, 4.0])
 
-            meshes.extend([pad_medial, pad_lateral, pad_trochlea])
+            pad_lateral = trimesh.creation.icosphere(radius=condyle_radius * 0.92, subdivisions=3)
+            pad_lateral.apply_scale([0.80, 1.15, 0.60])
+            pad_lateral.apply_translation([-condyle_span / 2.0, d_ap * 0.28, 4.0])
+
+            # Gancho de tope troclear anterior (tercer punto isostático de auto-fijación)
+            hook_anterior = trimesh.creation.box(extents=[w_ml * 0.35, wall_th * 2.0, block_height * 0.7])
+            hook_anterior.apply_translation([0.0, d_ap * 0.62, block_height * 0.5])
+
+            meshes.extend([arch_bridge, pad_medial, pad_lateral, hook_anterior])
 
             # --- 3. TORRES DE FIJACIÓN DE AGUJAS KIRSCHNER DIVERGENTES ---
             tower_outer_r = (pin_d / 2.0) + wall_th * 0.8
@@ -419,12 +433,25 @@ class TraumatologyPsiModule(EngineeringModule):
             tibia_block.apply_transform(rot_slope)
             meshes.append(tibia_block)
 
-            # Apoyos anteriores en meseta tibial
-            pad_ant_m = trimesh.creation.box(extents=[plateau_w * 0.25, 14.0, 6.0])
-            pad_ant_m.apply_translation([plateau_w * 0.28, 8.0, 3.0])
-            pad_ant_l = trimesh.creation.box(extents=[plateau_w * 0.25, 14.0, 6.0])
-            pad_ant_l.apply_translation([-plateau_w * 0.28, 8.0, 3.0])
-            meshes.extend([pad_ant_m, pad_ant_l])
+            # Apoyos anatómicos anteriores que abrazan el reborde anterior de la meseta tibial
+            arch_tibia = trimesh.creation.cylinder(radius=plateau_w * 0.42, height=wall_th * 1.5, sections=28)
+            arch_tibia.apply_scale([1.0, 0.65, 1.0])
+            arch_tibia.apply_translation([0.0, plateau_w * 0.28, 4.0])
+
+            # Torres para agujas de fijación Kirschner tibiales (frontales)
+            tower_r = (pin_d / 2.0) + wall_th * 0.8
+            tower_tib_m = trimesh.creation.cylinder(radius=tower_r, height=block_height * 1.1)
+            tower_tib_m.apply_translation([plateau_w * 0.25, -block_depth * 0.45, block_height * 0.5])
+
+            tower_tib_l = trimesh.creation.cylinder(radius=tower_r, height=block_height * 1.1)
+            tower_tib_l.apply_translation([-plateau_w * 0.25, -block_depth * 0.45, block_height * 0.5])
+
+            # Apoyos condilares en platillos
+            pad_ant_m = trimesh.creation.box(extents=[plateau_w * 0.24, 16.0, 8.0])
+            pad_ant_m.apply_translation([plateau_w * 0.28, 8.0, 4.0])
+            pad_ant_l = trimesh.creation.box(extents=[plateau_w * 0.24, 16.0, 8.0])
+            pad_ant_l.apply_translation([-plateau_w * 0.28, 8.0, 4.0])
+            meshes.extend([arch_tibia, tower_tib_m, tower_tib_l, pad_ant_m, pad_ant_l])
 
             # Nervaduras tibiales
             for i in range(rib_count):

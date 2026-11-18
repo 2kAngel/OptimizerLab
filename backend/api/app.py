@@ -3,7 +3,7 @@ Definición de la aplicación FastAPI y endpoints REST para DesignLab.
 """
 
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
@@ -336,6 +336,33 @@ def get_experiment_candidates(experiment_id: str, db: Session = Depends(get_db))
             "evaluations": evals,
         })
     return results
+
+
+# --- Ingesta de TAC / Malla Ósea (Traumatología PSI) ---
+
+@app.post("/api/traumatology/load-sample-scan")
+def load_sample_scan(family_id: str = "distal_femur_cutting_guide", is_right: bool = True):
+    """Carga una anatomía ósea de referencia (fémur distal o tibia) para pruebas clínicas inmediatas."""
+    from modules.traumatology_psi.bone_service import BoneAnatomyService
+    import io
+    if "tibia" in family_id:
+        bone = BoneAnatomyService.create_reference_proximal_tibia(width_ml=74.0, is_right=is_right)
+        fname = f"sample_proximal_tibia_{'right' if is_right else 'left'}.stl"
+    else:
+        bone = BoneAnatomyService.create_reference_distal_femur(width_ml=72.0, depth_ap=62.0, is_right=is_right)
+        fname = f"sample_distal_femur_{'right' if is_right else 'left'}.stl"
+
+    buf = io.BytesIO()
+    bone.export(buf, file_type="stl")
+    return BoneAnatomyService.process_bone_mesh_file(buf.getvalue(), fname)
+
+
+@app.post("/api/traumatology/upload-scan")
+async def upload_scan(file: UploadFile = File(...)):
+    """Sube y procesa una malla anatómica (STL/OBJ) o corte DICOM de un paciente."""
+    from modules.traumatology_psi.bone_service import BoneAnatomyService
+    contents = await file.read()
+    return BoneAnatomyService.process_bone_mesh_file(contents, file.filename or "patient_scan.stl")
 
 
 # --- Geometría y Exportación 3D ---

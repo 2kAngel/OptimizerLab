@@ -147,6 +147,71 @@ export default function App() {
   const [tibiaPlateauWidth, setTibiaPlateauWidth] = useState(74.0)
   const [posteriorSlope, setPosteriorSlope] = useState(3.0)
 
+  // Ingesta de TAC / Malla Ósea (Control Clínico Anti-Error)
+  const [patientScan, setPatientScan] = useState<{
+    scan_id: string
+    filename: string
+    width_ml: number
+    depth_ap: number
+    height_z: number
+    detected_laterality: string
+    cortical_density_check: string
+    safety_status: string
+  } | null>(null)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [prescribedLaterality, setPrescribedLaterality] = useState<'right' | 'left'>('right')
+  const [patientIdInput, setPatientIdInput] = useState('PACIENTE-84021')
+
+  const handleLoadSampleScan = async () => {
+    setScanLoading(true)
+    setLogMessage('Cargando TAC clínico de referencia con segmentación cortical...')
+    try {
+      const isRight = prescribedLaterality === 'right'
+      const res = await fetch(`/api/traumatology/load-sample-scan?family_id=${selectedFamilyId}&is_right=${isRight}`, { method: 'POST' })
+      if (!res.ok) throw new Error('Error al cargar TAC de muestra')
+      const data = await res.json()
+      setPatientScan(data)
+      if (data.width_ml) {
+        setFemurWidthMl(data.width_ml)
+        setTibiaPlateauWidth(data.width_ml)
+      }
+      if (data.depth_ap) setFemurDepthAp(data.depth_ap)
+      setLogMessage(`✅ TAC Clínico Cargado: ${data.filename} (${data.detected_laterality}) — Cotas anatómicas vinculadas con éxito.`)
+    } catch (e: any) {
+      setLogMessage(`Error: ${e.message}`)
+    } finally {
+      setScanLoading(false)
+    }
+  }
+
+  const handleUploadScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setScanLoading(true)
+    setLogMessage(`Procesando archivo tomográfico del paciente: ${file.name}...`)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/traumatology/upload-scan', {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) throw new Error('Error al procesar el archivo tomográfico')
+      const data = await res.json()
+      setPatientScan(data)
+      if (data.width_ml) {
+        setFemurWidthMl(data.width_ml)
+        setTibiaPlateauWidth(data.width_ml)
+      }
+      if (data.depth_ap) setFemurDepthAp(data.depth_ap)
+      setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — Malla cortical procesada.`)
+    } catch (err: any) {
+      setLogMessage(`Error al subir TAC: ${err.message}`)
+    } finally {
+      setScanLoading(false)
+    }
+  }
+
   // Guardar en localStorage cuando cambie savedTops
   useEffect(() => {
     try {
@@ -329,6 +394,9 @@ export default function App() {
         rib_thickness: Number(ribThickness),
         cortical_offset: 0.15,
         material_modulus_gpa: 2.8,
+        scan_id: patientScan?.scan_id || null,
+        patient_id: patientIdInput,
+        prescribed_laterality: prescribedLaterality,
       }
     } else if (selectedFamilyId === 'proximal_tibia_cutting_guide') {
       return {
@@ -343,6 +411,9 @@ export default function App() {
         rib_thickness: Number(ribThickness),
         cortical_offset: 0.15,
         material_modulus_gpa: 2.8,
+        scan_id: patientScan?.scan_id || null,
+        patient_id: patientIdInput,
+        prescribed_laterality: prescribedLaterality,
       }
     } else if (selectedFamilyId === 'hawt_conventional') {
       return {
@@ -1505,7 +1576,8 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 </button>
               </div>
               ) : (
-              /* En Traumatología: Barra de Estado de Prescripción Quirúrgica Determinista */
+              <>
+              {/* En Traumatología: Barra de Estado de Prescripción Quirúrgica Determinista */}
               <div style={{ background: '#082f49', borderRadius: 8, padding: '12px 16px', marginBottom: 18, border: '1px solid #0284c7', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1519,6 +1591,170 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                   <span>Cumplimiento: <strong>MDR 2017/745 Anexo XIII</strong></span>
                 </div>
               </div>
+
+              {/* Módulo de Ingesta Tomográfica (TAC / DICOM / Malla Ósea) & Protocolo Anti-Error */}
+              <div style={{ background: '#0f172a', borderRadius: 8, padding: 16, marginBottom: 18, border: '1px solid #334155' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🦴</span>
+                    <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#38bdf8' }}>
+                      1. Ingesta Tomográfica del Paciente (TAC / DICOM / Malla Ósea 3D)
+                    </h4>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    Segmentación Cortical Automatizada &gt; 350 HU (Blindado Anti-Error)
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1fr', gap: 12, marginBottom: 12 }}>
+                  {/* Identificación y Lateralidad */}
+                  <div style={{ background: '#1e293b', padding: 10, borderRadius: 6, border: '1px solid #334155' }}>
+                    <label style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+                      NHC / ID Paciente (Anonimizado RGPD):
+                    </label>
+                    <input
+                      type="text"
+                      value={patientIdInput}
+                      onChange={(e) => setPatientIdInput(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: 4, background: '#0f172a', color: '#fff', border: '1px solid #475569', fontSize: 12, fontWeight: 600, marginBottom: 8 }}
+                    />
+                    <label style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+                      Lateralidad Prescrita:
+                    </label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => setPrescribedLaterality('right')}
+                        style={{
+                          flex: 1,
+                          padding: '6px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: prescribedLaterality === 'right' ? 700 : 400,
+                          background: prescribedLaterality === 'right' ? '#0284c7' : '#0f172a',
+                          color: '#fff',
+                          border: prescribedLaterality === 'right' ? '1px solid #38bdf8' : '1px solid #334155',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🦵 Rodilla DERECHA
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPrescribedLaterality('left')}
+                        style={{
+                          flex: 1,
+                          padding: '6px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: prescribedLaterality === 'left' ? 700 : 400,
+                          background: prescribedLaterality === 'left' ? '#0284c7' : '#0f172a',
+                          color: '#fff',
+                          border: prescribedLaterality === 'left' ? '1px solid #38bdf8' : '1px solid #334155',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🦵 Rodilla IZQUIERDA
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Acciones de Carga de TAC */}
+                  <div style={{ background: '#1e293b', padding: 10, borderRadius: 6, border: '1px solid #334155', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Cargar Archivo Tomográfico:</div>
+                      <input
+                        type="file"
+                        id="scan-file-input"
+                        accept=".stl,.obj,.ply,.dcm,.zip"
+                        onChange={handleUploadScanFile}
+                        style={{ display: 'none' }}
+                      />
+                      <label
+                        htmlFor="scan-file-input"
+                        style={{
+                          display: 'block',
+                          textAlign: 'center',
+                          padding: '7px 10px',
+                          borderRadius: 5,
+                          background: '#0f172a',
+                          color: '#38bdf8',
+                          border: '1px dashed #0284c7',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          marginBottom: 6,
+                        }}
+                      >
+                        📁 {scanLoading ? 'Procesando TAC...' : 'Subir TAC / Malla (.stl, .obj, .dcm)'}
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLoadSampleScan}
+                      disabled={scanLoading}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: 5,
+                        background: '#10b981',
+                        color: '#fff',
+                        border: 'none',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      🦴 Cargar TAC Clínico de Referencia (Demo)
+                    </button>
+                  </div>
+
+                  {/* Estado de Seguridad Pre-Quirúrgica */}
+                  <div style={{ background: '#1e293b', padding: 10, borderRadius: 6, border: '1px solid #334155', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    {patientScan ? (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, color: '#94a3b8' }}>TAC Vinculado:</span>
+                          <span style={{ fontSize: 10, background: '#064e3b', color: '#6ee7b7', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>
+                            {patientScan.safety_status ? 'CONFORME' : 'ACTIVO'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {patientScan.filename}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#38bdf8', marginTop: 2 }}>
+                          {patientScan.detected_laterality} | Cotas: {patientScan.width_ml}×{patientScan.depth_ap} mm
+                        </div>
+                        <div style={{ fontSize: 10, color: '#10b981', marginTop: 2 }}>
+                          Cortical: {patientScan.cortical_density_check}
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center', color: '#64748b', fontSize: 11 }}>
+                        Ningún TAC cargado.<br />
+                        <span style={{ fontSize: 10, color: '#94a3b8' }}>Sube un TAC o pulsa "Cargar TAC de Referencia".</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ALERTA DE SEGURIDAD SI HAY DISCREPANCIA DE LATERALIDAD */}
+                {patientScan && (
+                  (prescribedLaterality === 'right' && !patientScan.detected_laterality.toLowerCase().includes('derecha')) ||
+                  (prescribedLaterality === 'left' && !patientScan.detected_laterality.toLowerCase().includes('izquierda'))
+                ) && (
+                  <div style={{ background: '#7f1d1d', border: '1px solid #ef4444', borderRadius: 6, padding: '10px 14px', color: '#fef2f2', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 20 }}>🚨</span>
+                    <div>
+                      <strong>BLOQUEO DE SEGURIDAD QUIRÚRGICO (FAIL-SAFE ANTI-ERROR):</strong> Discrepancia crítica de lateralidad. La prescripción indica rodilla <strong>{prescribedLaterality === 'right' ? 'DERECHA' : 'IZQUIERDA'}</strong>, pero la anatomía detectada en el TAC cargado corresponde a <strong>{patientScan.detected_laterality}</strong>. La generación de la guía está bloqueada para prevenir una resección en el miembro incorrecto.
+                    </div>
+                  </div>
+                )}
+              </div>
+              </>
               )}
 
               {/* Formulario según familia */}
@@ -1659,28 +1895,41 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 </div>
               )}
 
-              <button
-                onClick={handleGenerateAndEvaluate}
-                disabled={loading || optimizing || !selectedProjectId}
-                style={{
-                  padding: '10px 22px',
-                  borderRadius: 6,
-                  background: '#10b981',
-                  color: '#fff',
-                  border: 'none',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                {loading
-                  ? 'Generando Geometría 3D...'
-                  : selectedModuleId === 'traumatology_psi'
-                  ? `▶ Generar Guía PSI (${selectedFamilyId === 'distal_femur_cutting_guide' ? 'Fémur Distal' : 'Tibia Proximal'}) & Evaluar Biomecánica`
-                  : `▶ Diseñar Turbina (${selectedFamilyId === 'hawt_conventional' ? `${hawtBlades} Palas` : selectedFamilyId === 'spherical_vawt' ? `${sphereBlades} Álabes` : `${savBlades} Palas`}) & Evaluar`}
-              </button>
+              {(() => {
+                const isLateralityMismatch =
+                  selectedModuleId === 'traumatology_psi' &&
+                  patientScan &&
+                  ((prescribedLaterality === 'right' && !patientScan.detected_laterality.toLowerCase().includes('derecha')) ||
+                    (prescribedLaterality === 'left' && !patientScan.detected_laterality.toLowerCase().includes('izquierda')))
+
+                return (
+                  <button
+                    onClick={handleGenerateAndEvaluate}
+                    disabled={loading || optimizing || !selectedProjectId || !!isLateralityMismatch}
+                    style={{
+                      padding: '12px 24px',
+                      borderRadius: 6,
+                      background: isLateralityMismatch ? '#7f1d1d' : '#10b981',
+                      color: '#fff',
+                      border: isLateralityMismatch ? '1px solid #ef4444' : 'none',
+                      fontWeight: 700,
+                      cursor: isLateralityMismatch ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      boxShadow: isLateralityMismatch ? 'none' : '0 2px 10px rgba(16, 185, 129, 0.35)',
+                    }}
+                  >
+                    {loading
+                      ? 'Generando Geometría 3D...'
+                      : isLateralityMismatch
+                      ? '🚫 BLOQUEADO: Incompatibilidad de Lateralidad TAC'
+                      : selectedModuleId === 'traumatology_psi'
+                      ? `⚡ Generar Guía PSI con Ajuste Puzzle (${selectedFamilyId === 'distal_femur_cutting_guide' ? 'Fémur Distal' : 'Tibia Proximal'})`
+                      : `▶ Diseñar Turbina (${selectedFamilyId === 'hawt_conventional' ? `${hawtBlades} Palas` : selectedFamilyId === 'spherical_vawt' ? `${sphereBlades} Álabes` : `${savBlades} Palas`}) & Evaluar`}
+                  </button>
+                )
+              })()}
             </div>
 
             {/* Si es traumatología: Panel de Verificación Quirúrgica y Descargas MDR; si es eólica: Frente de Pareto */}
