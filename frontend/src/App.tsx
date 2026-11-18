@@ -135,6 +135,18 @@ export default function App() {
   // Viento común
   const [windSpeed, setWindSpeed] = useState(8.5)
 
+  // Parámetros Traumatología PSI (Cirugía de Rodilla)
+  const [femurWidthMl, setFemurWidthMl] = useState(72.0)
+  const [femurDepthAp, setFemurDepthAp] = useState(62.0)
+  const [valgusAngle, setValgusAngle] = useState(5.5)
+  const [resectionThickness, setResectionThickness] = useState(9.0)
+  const [sawBladeThickness, setSawBladeThickness] = useState(1.19)
+  const [pinSpread, setPinSpread] = useState(48.0)
+  const [ribCount, setRibCount] = useState(4)
+  const [ribThickness, setRibThickness] = useState(2.5)
+  const [tibiaPlateauWidth, setTibiaPlateauWidth] = useState(74.0)
+  const [posteriorSlope, setPosteriorSlope] = useState(3.0)
+
   // Guardar en localStorage cuando cambie savedTops
   useEffect(() => {
     try {
@@ -291,8 +303,48 @@ export default function App() {
     }
   }
 
+  const handleModuleChange = (newModuleId: string) => {
+    setSelectedModuleId(newModuleId)
+    if (newModuleId === 'traumatology_psi') {
+      setSelectedFamilyId('distal_femur_cutting_guide')
+    } else if (newModuleId === 'wind_turbines') {
+      setSelectedFamilyId('spherical_vawt')
+    } else if (newModuleId === 'structural_beam') {
+      setSelectedFamilyId('cantilever_rectangular')
+    }
+  }
+
   const getActiveParameters = () => {
-    if (selectedFamilyId === 'hawt_conventional') {
+    if (selectedFamilyId === 'distal_femur_cutting_guide') {
+      return {
+        femur_width_ml: Number(femurWidthMl),
+        femur_depth_ap: Number(femurDepthAp),
+        valgus_angle: Number(valgusAngle),
+        resection_thickness: Number(resectionThickness),
+        saw_blade_thickness: Number(sawBladeThickness),
+        pin_diameter: 3.2,
+        pin_spread: Number(pinSpread),
+        wall_thickness: 3.5,
+        rib_count: Number(ribCount),
+        rib_thickness: Number(ribThickness),
+        cortical_offset: 0.15,
+        material_modulus_gpa: 2.8,
+      }
+    } else if (selectedFamilyId === 'proximal_tibia_cutting_guide') {
+      return {
+        tibia_plateau_width: Number(tibiaPlateauWidth),
+        posterior_slope: Number(posteriorSlope),
+        varus_valgus_angle: 0.0,
+        resection_depth: 8.0,
+        saw_blade_thickness: Number(sawBladeThickness),
+        pin_diameter: 3.2,
+        wall_thickness: 3.5,
+        rib_count: Number(ribCount),
+        rib_thickness: Number(ribThickness),
+        cortical_offset: 0.15,
+        material_modulus_gpa: 2.8,
+      }
+    } else if (selectedFamilyId === 'hawt_conventional') {
       return {
         rotor_diameter: Number(hawtDiameter),
         blade_count: Number(hawtBlades),
@@ -374,6 +426,8 @@ export default function App() {
     const p = cand.parameters || {}
 
     const typeCodeMap: Record<string, string> = {
+      distal_femur_cutting_guide: 'FEMUR',
+      proximal_tibia_cutting_guide: 'TIBIA',
       hawt_conventional: 'HAWT',
       savonius_vawt: 'SAVO',
       spherical_vawt: 'ESFR',
@@ -383,6 +437,13 @@ export default function App() {
       counter_rotating_crwt: 'CRWT',
       bionic_whale_tubercle: 'BIONIC',
       conical_drill_vane: 'TALADRO',
+    }
+
+    if (fam === 'distal_femur_cutting_guide') {
+      return `PSI-FEMUR-${p.valgus_angle || 5.5}V-${p.rib_count || 4}R`
+    }
+    if (fam === 'proximal_tibia_cutting_guide') {
+      return `PSI-TIBIA-${p.posterior_slope || 3}S-${p.rib_count || 4}R`
     }
 
     const typeCode = typeCodeMap[fam] || 'GEN'
@@ -401,6 +462,8 @@ export default function App() {
 
     const scaleLabel = selectedScale === 'domestic' ? 'Doméstico' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'
     const familyNames: Record<string, string> = {
+      distal_femur_cutting_guide: 'Guía de Corte Femoral Distal (Zero-Rocking)',
+      proximal_tibia_cutting_guide: 'Guía de Corte Tibial Proximal (Slope Ajustable)',
       hawt_conventional: 'HAWT Clásico (Molino)',
       savonius_vawt: 'Savonius VAWT (Arrastre)',
       spherical_vawt: 'Turbina Esférica (Omnidireccional)',
@@ -529,16 +592,19 @@ export default function App() {
       return
     }
     setLoading(true)
-    const familyName = selectedFamilyId === 'hawt_conventional' ? `HAWT (${hawtBlades} Palas)` : selectedFamilyId === 'spherical_vawt' ? 'Esférica' : `Savonius (${savBlades} Palas)`
+    const isTrauma = selectedModuleId === 'traumatology_psi'
+    const familyName = isTrauma
+      ? (selectedFamilyId === 'distal_femur_cutting_guide' ? 'Guía Fémur Distal (Zero-Rocking)' : 'Guía Tibia Proximal (Slope)')
+      : selectedFamilyId === 'hawt_conventional' ? `HAWT (${hawtBlades} Palas)` : selectedFamilyId === 'spherical_vawt' ? 'Esférica' : `Savonius (${savBlades} Palas)`
     setLogMessage(`Generando modelo 3D para ${familyName}...`)
 
     try {
       const familyId = selectedFamilyId
       const parameters = getActiveParameters()
-      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225, scale: selectedScale }
+      const operatingConditions = isTrauma ? { surgical_approach: 'standard', bone_quality: 'normal' } : { wind_speed: Number(windSpeed), air_density: 1.225, scale: selectedScale }
 
       const scaleLabel = selectedScale === 'domestic' ? 'Doméstico' : selectedScale === 'medium' ? 'Mediano' : 'Gran Escala'
-      const expName = `${familyName} — ${scaleLabel} (v=${windSpeed} m/s)`
+      const expName = isTrauma ? `${familyName} — Personalizada` : `${familyName} — ${scaleLabel} (v=${windSpeed} m/s)`
 
       const expRes = await fetch('/api/experiments', {
         method: 'POST',
@@ -616,15 +682,19 @@ export default function App() {
     setLogMessage(`Iniciando Algoritmo Genético NSGA-II (${scaleLabel}): Evaluando ${totalRuns} variantes (Población: ${popSize}, Gen: ${nGen}, Semilla: ${effectiveSeed})...`)
 
     try {
+      const isTrauma = selectedModuleId === 'traumatology_psi'
       const familyId = selectedFamilyId
-      const operatingConditions = { wind_speed: Number(windSpeed), air_density: 1.225, scale: selectedScale }
+      const operatingConditions = isTrauma ? { bone_quality: 'normal' } : { wind_speed: Number(windSpeed), air_density: 1.225, scale: selectedScale }
+      const expName = isTrauma
+        ? `Optimización PSI — ${selectedFamilyId === 'distal_femur_cutting_guide' ? 'Fémur Distal' : 'Tibia'} (${totalRuns} variantes)`
+        : `Optimización NSGA-II — ${selectedFamilyId} (${totalRuns} intentos, ${scaleLabel})`
 
       const expRes = await fetch('/api/experiments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: selectedProjectId,
-          name: `Optimización NSGA-II — ${selectedFamilyId} (${totalRuns} intentos, ${scaleLabel})`,
+          name: expName,
           module_id: selectedModuleId,
           family_id: familyId,
           configuration: operatingConditions,
@@ -662,9 +732,10 @@ export default function App() {
     .filter((c) => c.evaluations.length > 0 && c.evaluations[0].metrics)
     .map((c) => {
       const m = c.evaluations[0].metrics
-      const power = m.power_output !== undefined ? m.power_output : 100.0
-      const mass = m.rotor_mass !== undefined ? m.rotor_mass : 1.0
-      const torque = m.starting_torque || 0.0
+      const isTrauma = m.blade_deflection_mm !== undefined
+      const power = isTrauma ? (m.stability_score || 90.0) : (m.power_output !== undefined ? m.power_output : 100.0)
+      const mass = isTrauma ? (m.resin_volume_ml || 20.0) : (m.rotor_mass !== undefined ? m.rotor_mass : 1.0)
+      const torque = isTrauma ? (m.blade_deflection_mm || 0.05) : (m.starting_torque || 0.0)
 
       return {
         id: c.id,
@@ -785,7 +856,7 @@ export default function App() {
               <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#f8fafc' }}>Módulo de Ingeniería</h3>
               <select
                 value={selectedModuleId}
-                onChange={(e) => setSelectedModuleId(e.target.value)}
+                onChange={(e) => handleModuleChange(e.target.value)}
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #475569', marginBottom: 8 }}
               >
                 {modules.map((m) => (
@@ -797,27 +868,39 @@ export default function App() {
               </p>
             </div>
 
-            {/* Selector de Arquitectura */}
+            {/* Selector de Arquitectura o Instrumental */}
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #38bdf8' }}>
-              <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#38bdf8' }}>Arquitectura Aerodinámica</h3>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#38bdf8' }}>
+                {selectedModuleId === 'traumatology_psi' ? 'Instrumental Quirúrgico (PSI)' : 'Arquitectura Aerodinámica'}
+              </h3>
               <select
                 value={selectedFamilyId}
                 onChange={(e) => setSelectedFamilyId(e.target.value)}
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #0284c7', fontWeight: 600, marginBottom: 8 }}
               >
-                <option value="spherical_vawt">🌐 Turbina Esférica (Omnidireccional)</option>
-                <option value="conical_drill_vane">🔩 Turbina Cónica Tipo Taladro (Broca Veleta)</option>
-                <option value="hawt_conventional">🌬️ HAWT Clásico (Molino 3 Palas)</option>
-                <option value="savonius_vawt">🔄 Savonius (Eje Vertical - Arrastre)</option>
-                <option value="helical_gorlov">🌪️ Gorlov Helicoidal (Silenciosa - Azotea)</option>
-                <option value="wind_lens_ducted">🔍 Difusor Venturi (Wind Lens - Brisas)</option>
-                <option value="hybrid_savonius_darrieus">⚡ Híbrida Savonius-Darrieus (Doble Etapa)</option>
-                <option value="counter_rotating_crwt">🔄 Doble Rotor Contrarrotativo (CRWT)</option>
-                <option value="bionic_whale_tubercle">🐋 Bioinspirada (Tubérculos Ballena)</option>
+                {selectedModuleId === 'traumatology_psi' ? (
+                  <>
+                    <option value="distal_femur_cutting_guide">🦴 Guía Femoral Distal (Zero-Rocking)</option>
+                    <option value="proximal_tibia_cutting_guide">🦵 Guía Tibial Proximal (Slope Ajustable)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="spherical_vawt">🌐 Turbina Esférica (Omnidireccional)</option>
+                    <option value="conical_drill_vane">🔩 Turbina Cónica Tipo Taladro (Broca Veleta)</option>
+                    <option value="hawt_conventional">🌬️ HAWT Clásico (Molino 3 Palas)</option>
+                    <option value="savonius_vawt">🔄 Savonius (Eje Vertical - Arrastre)</option>
+                    <option value="helical_gorlov">🌪️ Gorlov Helicoidal (Silenciosa - Azotea)</option>
+                    <option value="wind_lens_ducted">🔍 Difusor Venturi (Wind Lens - Brisas)</option>
+                    <option value="hybrid_savonius_darrieus">⚡ Híbrida Savonius-Darrieus (Doble Etapa)</option>
+                    <option value="counter_rotating_crwt">🔄 Doble Rotor Contrarrotativo (CRWT)</option>
+                    <option value="bionic_whale_tubercle">🐋 Bioinspirada (Tubérculos Ballena)</option>
+                  </>
+                )}
               </select>
             </div>
 
-            {/* Selector de Escala de Aplicación */}
+            {/* Selector de Escala de Aplicación (Solo en eólica) */}
+            {selectedModuleId !== 'traumatology_psi' && (
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #10b981' }}>
               <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#10b981' }}>Escala de Aplicación</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -876,6 +959,7 @@ export default function App() {
                 </button>
               </div>
             </div>
+            )}
 
             {/* Banco de Tops Guardados */}
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #f59e0b' }}>
@@ -1288,6 +1372,69 @@ export default function App() {
               </div>
 
               {/* Formulario según familia */}
+              {selectedFamilyId === 'distal_femur_cutting_guide' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Ancho Fémur ML (mm)</label>
+                    <input type="number" step="1" value={femurWidthMl} onChange={(e) => setFemurWidthMl(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Profundidad AP (mm)</label>
+                    <input type="number" step="1" value={femurDepthAp} onChange={(e) => setFemurDepthAp(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Ángulo Valgo (°)</label>
+                    <input type="number" step="0.5" value={valgusAngle} onChange={(e) => setValgusAngle(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Corte Resección (mm)</label>
+                    <input type="number" step="0.5" value={resectionThickness} onChange={(e) => setResectionThickness(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Separación Agujas (mm)</label>
+                    <input type="number" step="1" value={pinSpread} onChange={(e) => setPinSpread(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#f59e0b', display: 'block', marginBottom: 4 }}>Nervaduras Refuerzo</label>
+                    <select value={ribCount} onChange={(e) => setRibCount(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569', fontWeight: 600 }}>
+                      <option value={2}>2 Nervios (Ligera)</option>
+                      <option value={4}>4 Nervios (Equilibrada)</option>
+                      <option value={6}>6 Nervios (Alta rigidez)</option>
+                      <option value={8}>8 Nervios (Ultra-rígida)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {selectedFamilyId === 'proximal_tibia_cutting_guide' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Platillo Tibial (mm)</label>
+                    <input type="number" step="1" value={tibiaPlateauWidth} onChange={(e) => setTibiaPlateauWidth(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Slope Posterior (°)</label>
+                    <input type="number" step="0.5" value={posteriorSlope} onChange={(e) => setPosteriorSlope(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#38bdf8', display: 'block', marginBottom: 4 }}>Hoja Sierra (mm)</label>
+                    <input type="number" step="0.01" value={sawBladeThickness} onChange={(e) => setSawBladeThickness(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#f59e0b', display: 'block', marginBottom: 4 }}>Nervaduras</label>
+                    <select value={ribCount} onChange={(e) => setRibCount(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569', fontWeight: 600 }}>
+                      <option value={2}>2 Nervaduras</option>
+                      <option value={4}>4 Nervaduras</option>
+                      <option value={6}>6 Nervaduras</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#10b981', display: 'block', marginBottom: 4 }}>Grosor Nervadura (mm)</label>
+                    <input type="number" step="0.5" value={ribThickness} onChange={(e) => setRibThickness(Number(e.target.value))} style={{ width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: 6, background: '#0f172a', color: '#fff', border: '1px solid #475569' }} />
+                  </div>
+                </div>
+              )}
+
               {selectedFamilyId === 'hawt_conventional' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 16 }}>
                   <div>
@@ -1378,7 +1525,11 @@ export default function App() {
                   gap: 8,
                 }}
               >
-                {loading ? 'Generando Geometría 3D...' : `▶ Diseñar Turbina (${selectedFamilyId === 'hawt_conventional' ? `${hawtBlades} Palas` : selectedFamilyId === 'spherical_vawt' ? `${sphereBlades} Álabes` : `${savBlades} Palas`}) & Evaluar`}
+                {loading
+                  ? 'Generando Geometría 3D...'
+                  : selectedModuleId === 'traumatology_psi'
+                  ? `▶ Generar Guía PSI (${selectedFamilyId === 'distal_femur_cutting_guide' ? 'Fémur Distal' : 'Tibia Proximal'}) & Evaluar Biomecánica`
+                  : `▶ Diseñar Turbina (${selectedFamilyId === 'hawt_conventional' ? `${hawtBlades} Palas` : selectedFamilyId === 'spherical_vawt' ? `${sphereBlades} Álabes` : `${savBlades} Palas`}) & Evaluar`}
               </button>
             </div>
 
@@ -1471,41 +1622,77 @@ export default function App() {
             {selectedCandidate && (
               <div style={{ background: '#0f172a', borderRadius: 8, padding: 18, marginBottom: 20, border: '1px solid #38bdf8' }}>
                 <h4 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  🔍 Desglose Físico: ¿Qué diferencias estructurales explican este rendimiento?
+                  {selectedMetrics?.blade_deflection_mm !== undefined
+                    ? '🩺 Desglose Clínico & Biomecánico: Validación de la Guía Quirúrgica PSI'
+                    : '🔍 Desglose Físico: ¿Qué diferencias estructurales explican este rendimiento?'}
                 </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12 }}>
-                  <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
-                    <div style={{ color: '#94a3b8', marginBottom: 4 }}>🌀 Área Frontal Barrida ($A$)</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981' }}>
-                      {(Math.PI * Math.pow((selectedDiameter / 1000) / 2, 2)).toFixed(2)} m²
+                {selectedMetrics?.blade_deflection_mm !== undefined ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12 }}>
+                    <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                      <div style={{ color: '#94a3b8', marginBottom: 4 }}>📐 Rigidez Anti-Deflexión (Ranura)</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981' }}>
+                        {selectedMetrics.blade_deflection_mm.toFixed(3)} mm
+                      </div>
+                      <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                        Bajo empuje axial de <strong>40 N a 15.000 CPM</strong>. Deflexión inferior a 0.10 mm para garantizar corte plano sin biselado.
+                      </p>
                     </div>
-                    <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
-                      La potencia eólica escala con el <strong>cuadrado del diámetro ($D^2$)</strong>. Un rotor de 2.5m captura <strong>39 veces más viento</strong> que uno de 0.4m.
-                    </p>
-                  </div>
 
-                  <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
-                    <div style={{ color: '#94a3b8', marginBottom: 4 }}>⚙️ Brazo de Palanca & Par Motor</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#f59e0b' }}>
-                      Radio R = {(selectedDiameter / 2000).toFixed(2)} m
+                    <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                      <div style={{ color: '#94a3b8', marginBottom: 4 }}>🦴 Estabilidad "Zero-Rocking"</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#f59e0b' }}>
+                        {selectedMetrics.stability_score} / 100 pts
+                      </div>
+                      <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                        Apoyo isostático en <strong>hueso cortical denso</strong>, evitando el basculeo sobre cartílago blando o grasa.
+                      </p>
                     </div>
-                    <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
-                      El par de arranque ($T = F \times R$) escala de forma <strong>cúbica ($D^3$)</strong>. A mayor radio, mayor palanca para autoarrancar con vientos suaves.
-                    </p>
-                  </div>
 
-                  <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
-                    <div style={{ color: '#94a3b8', marginBottom: 4 }}>⚖️ Densidad de Potencia Específica</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#a855f7' }}>
-                      {selectedMetrics?.power_output && selectedMetrics?.rotor_mass
-                        ? `${(selectedMetrics.power_output / selectedMetrics.rotor_mass).toFixed(2)} W/kg`
-                        : 'Calculando...'}
+                    <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                      <div style={{ color: '#94a3b8', marginBottom: 4 }}>💶 Coste Resina & Tiempo Impresión</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#a855f7' }}>
+                        {selectedMetrics.production_cost_eur} € ({selectedMetrics.print_time_minutes} min)
+                      </div>
+                      <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                        Impresión 3D MSLA a 50 µm en resina biocompatible esterilizable. Ahorro de <strong>~1.450 € por paciente</strong>.
+                      </p>
                     </div>
-                    <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
-                      Relación vatios generados por kilogramo de material. Permite comparar la eficiencia del uso de masa entre arquitecturas.
-                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12 }}>
+                    <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                      <div style={{ color: '#94a3b8', marginBottom: 4 }}>🌀 Área Frontal Barrida ($A$)</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981' }}>
+                        {(Math.PI * Math.pow((selectedDiameter / 1000) / 2, 2)).toFixed(2)} m²
+                      </div>
+                      <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                        La potencia eólica escala con el <strong>cuadrado del diámetro ($D^2$)</strong>. Un rotor de 2.5m captura <strong>39 veces más viento</strong> que uno de 0.4m.
+                      </p>
+                    </div>
+
+                    <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                      <div style={{ color: '#94a3b8', marginBottom: 4 }}>⚙️ Brazo de Palanca & Par Motor</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#f59e0b' }}>
+                        Radio R = {(selectedDiameter / 2000).toFixed(2)} m
+                      </div>
+                      <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                        El par de arranque ($T = F \times R$) escala de forma <strong>cúbica ($D^3$)</strong>. A mayor radio, mayor palanca para autoarrancar con vientos suaves.
+                      </p>
+                    </div>
+
+                    <div style={{ background: '#1e293b', padding: 12, borderRadius: 6 }}>
+                      <div style={{ color: '#94a3b8', marginBottom: 4 }}>⚖️ Densidad de Potencia Específica</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#a855f7' }}>
+                        {selectedMetrics?.power_output && selectedMetrics?.rotor_mass
+                          ? `${(selectedMetrics.power_output / selectedMetrics.rotor_mass).toFixed(2)} W/kg`
+                          : 'Calculando...'}
+                      </div>
+                      <p style={{ margin: '6px 0 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
+                        Relación vatios generados por kilogramo de material. Permite comparar la eficiencia del uso de masa entre arquitecturas.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

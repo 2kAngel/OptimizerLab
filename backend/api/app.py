@@ -34,6 +34,7 @@ async def lifespan(application: FastAPI):
     init_db()
     from modules.test_module.module import TestBeamModule
     from modules.wind_turbines.module import WindTurbineModule
+    from modules.traumatology_psi.module import TraumatologyPsiModule
     
     # Registrar módulos si no están registrados
     try:
@@ -45,6 +46,11 @@ async def lifespan(application: FastAPI):
         registry.get_module("wind_turbines")
     except KeyError:
         registry.register(WindTurbineModule())
+
+    try:
+        registry.get_module("traumatology_psi")
+    except KeyError:
+        registry.register(TraumatologyPsiModule())
     
     # Recuperación de jobs huérfanos
     from backend.database.session import SessionLocal

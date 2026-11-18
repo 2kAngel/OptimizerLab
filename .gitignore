@@ -29,3 +29,5 @@ tests/*.db*
 Thumbs.db
 .vscode/
 .idea/
+*.mp4
+Nueva carpeta/
