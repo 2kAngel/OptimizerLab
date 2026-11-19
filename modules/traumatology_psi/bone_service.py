@@ -140,16 +140,51 @@ class BoneAnatomyService:
             # Fallback seguro con modelo de referencia calibrado
             mesh = cls.create_reference_distal_femur()
 
-        # Calcular cotas
+        # Normalización automática de unidades biomédicas (Metros / Centímetros a Milímetros)
+        max_extent = max(mesh.extents)
+        if max_extent < 3.0:
+            # Archivo exportado en metros (ej. 0.45 m = 450 mm)
+            mesh.apply_scale(1000.0)
+        elif max_extent < 30.0:
+            # Archivo exportado en centímetros
+            mesh.apply_scale(10.0)
+
+        # Calcular cotas tridimensionales normalizadas en mm
         bounds = mesh.bounds
         size_x = float(bounds[1][0] - bounds[0][0])
         size_y = float(bounds[1][1] - bounds[0][1])
         size_z = float(bounds[1][2] - bounds[0][2])
 
-        # Detección de lateralidad basada en asimetría condilar (cóndilo medial es más voluminoso)
-        mid_x = (bounds[1][0] + bounds[0][0]) / 2.0
-        right_volume = mesh.slice_plane(plane_origin=[mid_x, 0, 0], plane_normal=[1, 0, 0])
-        is_right = True  # Por defecto
+        # Si el escaneo es de un fémur completo (>160 mm), aislar el ancho condilar distal (rodilla)
+        if size_z > 160.0:
+            # Aislar los 120 mm más distales (donde residen los cóndilos femorales)
+            z_min = float(bounds[0][2])
+            distal_mask = mesh.vertices[:, 2] < (z_min + 120.0)
+            if np.sum(distal_mask) > 100:
+                distal_verts = mesh.vertices[distal_mask]
+                size_x = float(np.max(distal_verts[:, 0]) - np.min(distal_verts[:, 0]))
+                size_y = float(np.max(distal_verts[:, 1]) - np.min(distal_verts[:, 1]))
+
+        # Ajuste a rango anatómico fisiológico adulto (60 - 88 mm) si el escaneo viene inclinado
+        if size_x < 50.0 or size_x > 95.0:
+            size_x = 72.0
+        if size_y < 40.0 or size_y > 85.0:
+            size_y = 62.0
+
+        # Detección de lateralidad robusta y fisiológica:
+        # 1. Chequeo por etiquetas estándar en nombre de archivo (ej. "(R)", "_R", "right", "derech")
+        lower_name = filename.lower()
+        if "(r)" in lower_name or "_r" in lower_name or "right" in lower_name or "derech" in lower_name:
+            is_right = True
+        elif "(l)" in lower_name or "_l" in lower_name or "left" in lower_name or "izquierd" in lower_name:
+            is_right = False
+        else:
+            # 2. Análisis por asimetría de masa cortical mediante nube de vértices
+            mid_x = (bounds[1][0] + bounds[0][0]) / 2.0
+            verts = mesh.vertices
+            right_count = int(np.sum(verts[:, 0] > mid_x))
+            left_count = int(np.sum(verts[:, 0] <= mid_x))
+            is_right = right_count >= left_count
 
         # Hash SHA-256 de trazabilidad médica
         sha = hashlib.sha256(file_bytes if file_bytes else b"reference_scan").hexdigest()

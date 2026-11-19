@@ -160,6 +160,7 @@ export default function App() {
   } | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
   const [prescribedLaterality, setPrescribedLaterality] = useState<'right' | 'left'>('right')
+  const [lateralityOverride, setLateralityOverride] = useState(false)
   const [patientIdInput, setPatientIdInput] = useState('PACIENTE-84021')
 
   const handleLoadSampleScan = async () => {
@@ -1764,15 +1765,42 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 </div>
 
                 {/* ALERTA DE SEGURIDAD SI HAY DISCREPANCIA DE LATERALIDAD */}
-                {patientScan && (
+                {patientScan && !lateralityOverride && (
                   (prescribedLaterality === 'right' && !patientScan.detected_laterality.toLowerCase().includes('derecha')) ||
                   (prescribedLaterality === 'left' && !patientScan.detected_laterality.toLowerCase().includes('izquierda'))
                 ) && (
-                  <div style={{ background: '#7f1d1d', border: '1px solid #ef4444', borderRadius: 6, padding: '10px 14px', color: '#fef2f2', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 20 }}>🚨</span>
-                    <div>
-                      <strong>BLOQUEO DE SEGURIDAD QUIRÚRGICO (FAIL-SAFE ANTI-ERROR):</strong> Discrepancia crítica de lateralidad. La prescripción indica rodilla <strong>{prescribedLaterality === 'right' ? 'DERECHA' : 'IZQUIERDA'}</strong>, pero la anatomía detectada en el TAC cargado corresponde a <strong>{patientScan.detected_laterality}</strong>. La generación de la guía está bloqueada para prevenir una resección en el miembro incorrecto.
+                  <div style={{ background: '#7f1d1d', border: '1px solid #ef4444', borderRadius: 6, padding: '12px 14px', color: '#fef2f2', fontSize: 12, fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 24 }}>🚨</span>
+                      <div>
+                        <strong style={{ color: '#fca5a5' }}>BLOQUEO DE SEGURIDAD QUIRÚRGICO (FAIL-SAFE ANTI-ERROR):</strong> Discrepancia crítica de lateralidad. La prescripción indica rodilla <strong>{prescribedLaterality === 'right' ? 'DERECHA' : 'IZQUIERDA'}</strong>, pero la orientación detectada en el TAC cargado corresponde a <strong>{patientScan.detected_laterality}</strong>.
+                      </div>
                     </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => setPrescribedLaterality(patientScan.detected_laterality.toLowerCase().includes('derecha') ? 'right' : 'left')}
+                        style={{ padding: '6px 12px', borderRadius: 4, background: '#0284c7', border: 'none', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        🔄 Cambiar Prescripción a {patientScan.detected_laterality}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLateralityOverride(true)
+                          setLogMessage(`⚠️ Auditoría Quirúrgica MDR: Lateralidad ${prescribedLaterality === 'right' ? 'DERECHA' : 'IZQUIERDA'} validada y forzada manualmente por el facultativo.`)
+                        }}
+                        style={{ padding: '6px 12px', borderRadius: 4, background: 'rgba(239, 68, 68, 0.25)', border: '1px solid #f87171', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        🩺 Confirmar que el Hueso es {prescribedLaterality === 'right' ? 'DERECHO' : 'IZQUIERDO'} y Desbloquear
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {lateralityOverride && (
+                  <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', borderRadius: 6, padding: '8px 12px', color: '#6ee7b7', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>🩺</span>
+                    <span>Auditoría Médica MDR: Prescripción para <strong>{prescribedLaterality === 'right' ? 'Rodilla DERECHA' : 'Rodilla IZQUIERDA'}</strong> validada formalmente por el cirujano. Generación habilitada.</span>
                   </div>
                 )}
               </div>
@@ -1919,6 +1947,7 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
 
               {(() => {
                 const isLateralityMismatch =
+                  !lateralityOverride &&
                   selectedModuleId === 'traumatology_psi' &&
                   patientScan &&
                   ((prescribedLaterality === 'right' && !patientScan.detected_laterality.toLowerCase().includes('derecha')) ||
