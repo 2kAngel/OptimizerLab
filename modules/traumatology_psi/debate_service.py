@@ -219,23 +219,205 @@ class ClinicalDebateService:
             )
         )
 
-        # Respuesta a consulta interactiva si se proporcionó una
+        # Generación dinámica de respuestas de los personajes ante preguntas del usuario
         if custom_query:
+            query_lower = custom_query.lower()
+            query_msg_id = len(messages) + 1
+
+            # 1. Añadir la pregunta del usuario como intervención en el acta
             messages.append(
                 DebateMessage(
-                    id=f"msg-query-{len(messages)+1}",
-                    speaker_id="special_advisor",
-                    speaker_name="Panel Multidisciplinar",
-                    speaker_role="Respuesta Colegiada del Comité",
-                    organization="Mesa Redonda MiroFish",
+                    id=f"msg-user-{query_msg_id}",
+                    speaker_id="user_interlocutor",
+                    speaker_name="Médico / Usuario Clínico",
+                    speaker_role="Pregunta Abierta al Comité Multidisciplinar",
+                    organization="Mesa de Sesión Clínica",
                     category="surgery",
-                    avatar_color="#06b6d4",
-                    badge_label="RESPUESTA DEL COMITÉ",
-                    text=f"Ante la cuestión planteada («{custom_query}»): El comité confirma que cualquier contingencia intraoperatoria está respaldada por la presencia obligatoria en quirófano de la caja de rescate con instrumental convencional. La guía PSI actúa como optimizador extramedular primario de máxima precisión sin invalidar la reversibilidad técnica inmediata.",
-                    key_argument="Principio de redundancia de seguridad médica y reversibilidad en quirófano.",
-                    sentiment="positive",
+                    avatar_color="#6366f1",
+                    badge_label="PREGUNTA AL COMITÉ",
+                    text=custom_query,
+                    key_argument="Cuestión clínica / operativa planteada en directo.",
+                    sentiment="neutral",
                 )
             )
+
+            # Intentar generar respuestas con Ollama qwen3:4b en local
+            ollama_success = False
+            try:
+                import urllib.request
+                import json
+
+                ollama_url = "http://127.0.0.1:11434/api/generate"
+                prompt_ollama = (
+                    f"Eres un comité hospitalario de traumatología debatiendo sobre una guía quirúrgica de rodilla impresa en 3D para el {patient_id}.\n"
+                    f"El médico o cirujano acaba de preguntar: «{custom_query}»\n\n"
+                    f"Responde con dos intervenciones cortas y directas en español:\n"
+                    f"1. [Dr. Valenzuela - Cirujano]: Expresando su preocupación médica o técnica sobre esa pregunta.\n"
+                    f"2. [Dra. Morante - Cirujana Innovadora / Especialista]: Dando la solución biomecánica o clínica exacta.\n"
+                    f"Responde directamente en ese formato."
+                )
+                req_data = json.dumps({
+                    "model": "qwen3:4b",
+                    "prompt": prompt_ollama,
+                    "stream": False,
+                    "options": {"temperature": 0.6, "num_predict": 300}
+                }).encode("utf-8")
+                req = urllib.request.Request(ollama_url, data=req_data, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=12) as response:
+                    if response.status == 200:
+                        res_json = json.loads(response.read().decode("utf-8"))
+                        raw_text = res_json.get("response", "").strip()
+                        if not raw_text and res_json.get("thinking"):
+                            # Si qwen3 dejó la respuesta en thinking o al final
+                            raw_text = res_json.get("thinking", "").strip()
+                        if raw_text and len(raw_text) > 20:
+                            messages.append(
+                                DebateMessage(
+                                    id=f"msg-ollama-{query_msg_id+1}",
+                                    speaker_id="qwen_ai_committee",
+                                    speaker_name="Dr. Valenzuela & Dra. Morante (IA Qwen3:4b Local)",
+                                    speaker_role="Debate en Vivo generado por Ollama",
+                                    organization="Comité de Traumatología",
+                                    category="surgery",
+                                    avatar_color="#8b5cf6",
+                                    badge_label="IA QWEN3 LOCAL",
+                                    text=raw_text,
+                                    key_argument=f"Análisis directo generado por el modelo local qwen3:4b ante: '{custom_query}'.",
+                                    sentiment="positive",
+                                )
+                            )
+                            ollama_success = True
+            except Exception:
+                ollama_success = False
+
+            # Si Ollama está ocupado o tarda más de 12 segundos, generar respuestas semánticas precisas por perfil
+            if not ollama_success:
+                if any(w in query_lower for w in ["sierra", "romp", "part", "traba", "atasco", "corte", "hoja", "bisel"]):
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+1}",
+                            speaker_id="surgeon_vet",
+                            speaker_name="Dr. Valenzuela",
+                            speaker_role="Jefe de Sección de Cirugía Ortopédica",
+                            organization="Servicio de Traumatología",
+                            category="surgery",
+                            avatar_color="#f59e0b",
+                            badge_label="TRAUMATÓLOGO VETERANO",
+                            text=f"Si la hoja de sierra se atranca o flecta dentro de la ranura, la fricción plástica generaría calor y virutas. En la cirugía clásica metálica usamos irrigación con suero frío constante. Si la ranura no tiene la holgura exacta (mínimo 0.2 mm mayor que la hoja), corremos el riesgo de atrapar la sierra a mitad del corte.",
+                            key_argument="Riesgo de atrapamiento y fricción térmica de la hoja en la ranura.",
+                            sentiment="critical",
+                        )
+                    )
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+2}",
+                            speaker_id="surgeon_innov",
+                            speaker_name="Dra. Morante",
+                            speaker_role="Cirujana Especialista en Artroplastia",
+                            organization="Unidad de Rodilla",
+                            category="surgery",
+                            avatar_color="#38bdf8",
+                            badge_label="TRAUMATÓLOGA PRO-PSI",
+                            text=f"Por eso la ranura está dimensionada a 1.19 mm para hojas comerciales de 0.9 mm a 1.0 mm. La holgura libre de 0.19 a 0.29 mm permite un flujo laminar de suero fisiológico continuo que refrigera el hueso y expulsa el detrito óseo sin resistencia, evitando cualquier micro-fusión de resina.",
+                            key_argument="Holgura calibrada de 1.19 mm e irrigación activa que impiden el bloqueo.",
+                            sentiment="positive",
+                        )
+                    )
+                elif any(w in query_lower for w in ["infecc", "esteril", "autoclave", "lavar", "bacteria", "alcohol", "calor", "temperatura"]):
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+1}",
+                            speaker_id="nurse_lead",
+                            speaker_name="Dña. Carmen Rivas",
+                            speaker_role="Supervisora de Enfermería Quirúrgica",
+                            organization="Bloque Quirúrgico",
+                            category="nursing",
+                            avatar_color="#14b8a6",
+                            badge_label="ENFERMERÍA QUIRÚRGICA",
+                            text="El protocolo de la central de esterilización hospitalaria para resina quirúrgica clase IIa exige lavado por ultrasonidos en alcohol isopropílico al 99% (2 ciclos de 10 min), curado UV a 60 °C y ciclo de vapor en autoclave a 121 °C durante 20 minutos. Si la resina resiste 121 °C sin deformación dimensional, el nivel de garantía de esterilidad (SAL) es 10⁻⁶, idéntico al acero.",
+                            key_argument="Protocolo de triple barrera: ultrasonidos, curado UV y autoclave de vapor 121 °C.",
+                            sentiment="positive",
+                        )
+                    )
+                elif any(w in query_lower for w in ["precio", "coste", "dinero", "zimmer", "stryker", "caro", "ahorro", "presupuesto"]):
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+1}",
+                            speaker_id="competitor_vp",
+                            speaker_name="Mr. Arthur Henderson",
+                            speaker_role="VP de Asuntos Gubernamentales & Acceso al Mercado",
+                            organization="Consorcio Multinacional Ortopédico",
+                            category="competitor",
+                            avatar_color="#ef4444",
+                            badge_label="LOBBY / COMPETENCIA",
+                            text="Ustedes solo cuentan los 5 euros del bote de resina líquida. Pero omiten el coste de la impresora 3D médica, el software de segmentación, la mano de obra del técnico y el seguro de responsabilidad. Nuestro precio de 1.400 € incluye todo el servicio llave en mano y entrega en 4 semanas.",
+                            key_argument="Intento de justificar el sobreprecio de 1.400 € imputando costes de servicio indirectos.",
+                            sentiment="hostile",
+                        )
+                    )
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+2}",
+                            speaker_id="finance_director",
+                            speaker_name="D. Fernando Beltrán",
+                            speaker_role="Director Económico",
+                            organization="Servicio de Salud Autonómico",
+                            category="finance",
+                            avatar_color="#10b981",
+                            badge_label="DIRECCIÓN FINANCIERA",
+                            text="Una impresora MSLA de grado médico de 4K cuesta 2.500 € y se amortiza en las primeras dos operaciones de rodilla. Con 450 cirugías al año, el hospital ahorra más de medio millón de euros. No hay argumento económico posible para seguir pagando 1.400 € por 30 gramos de polímero.",
+                            key_argument="Amortización del equipamiento en 2 operaciones y ahorro recurrente masivo.",
+                            sentiment="positive",
+                        )
+                    )
+                elif any(w in query_lower for w in ["legal", "juicio", "demanda", "ley", "mdr", "denuncia", "negligencia", "seguro"]):
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+1}",
+                            speaker_id="legal_counsel",
+                            speaker_name="Lic. Ignacio Arrieta",
+                            speaker_role="Jefe del Gabinete Jurídico & Compliance",
+                            organization="Comité Ético (CEIm)",
+                            category="legal",
+                            avatar_color="#8b5cf6",
+                            badge_label="ASESOR JURÍDICO (LEGAL)",
+                            text=f"Bajo el Reglamento Europeo MDR 2017/745 Anexo XIII, la responsabilidad primaria recae en la prescripción médica del facultativo, exactamente igual que cuando un cirujano dobla una placa de osteosíntesis en quirófano. Al contar con el hash SHA-256 de trazabilidad del TAC y la firma de prescripción, el hospital dispone de una prueba forense que acredita la individualización del implante frente a cualquier acusación de negligencia.",
+                            key_argument="Cobertura de responsabilidad médica bajo Anexo XIII y prueba forense por hash SHA-256.",
+                            sentiment="positive",
+                        )
+                    )
+                else:
+                    # Respuesta cruzada médica general
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+1}",
+                            speaker_id="surgeon_innov",
+                            speaker_name="Dra. Morante",
+                            speaker_role="Cirujana de Rodilla",
+                            organization="Unidad de Cirugía Compleja",
+                            category="surgery",
+                            avatar_color="#38bdf8",
+                            badge_label="TRAUMATÓLOGA PRO-PSI",
+                            text=f"Sobre su pregunta («{custom_query}»): Desde la perspectiva quirúrgica, el procedimiento no altera la secuencia protésica básica. Si durante el anclaje de la guía observamos cualquier discrepancia morfológica respecto al TAC, disponemos de la caja de rescate extramedular para revertir la técnica en menos de 60 segundos.",
+                            key_argument="Reversibilidad quirúrgica garantizada y seguridad intraoperatoria.",
+                            sentiment="positive",
+                        )
+                    )
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+2}",
+                            speaker_id="legal_counsel",
+                            speaker_name="Lic. Ignacio Arrieta",
+                            speaker_role="Asesor Jurídico",
+                            organization="Comité Ético",
+                            category="legal",
+                            avatar_color="#8b5cf6",
+                            badge_label="ASESOR JURÍDICO (LEGAL)",
+                            text=f"Complementando a la Dra. Morante: toda contingencia está amparada por el consentimiento informado específico del paciente para instrumental a medida bajo el protocolo MDR Anexo XIII aprobado por la Dirección Médica.",
+                            key_argument="Consentimiento informado específico y respaldo del comité.",
+                            sentiment="positive",
+                        )
+                    )
 
         return ClinicalDebateReport(
             session_id=f"SESION-CLINICA-{patient_id}",
