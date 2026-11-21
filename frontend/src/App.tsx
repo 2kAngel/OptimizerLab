@@ -373,6 +373,7 @@ export default function App() {
     setSelectedModuleId(newModuleId)
     if (newModuleId === 'traumatology_psi') {
       setSelectedFamilyId('distal_femur_cutting_guide')
+      setActiveTab('lab')
     } else if (newModuleId === 'wind_turbines') {
       setSelectedFamilyId('spherical_vawt')
     } else if (newModuleId === 'structural_beam') {
@@ -934,45 +935,53 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
           </p>
         </div>
 
-        {/* Pestañas Principales */}
-        <div style={{ display: 'flex', gap: 8, background: '#0f172a', padding: 4, borderRadius: 8, border: '1px solid #334155' }}>
-          <button
-            onClick={() => setActiveTab('lab')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 6,
-              border: 'none',
-              background: activeTab === 'lab' ? '#0284c7' : 'transparent',
-              color: activeTab === 'lab' ? '#fff' : '#94a3b8',
-              fontWeight: 600,
-              fontSize: 13,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            🔬 Laboratorio & NSGA-II
-          </button>
-          <button
-            onClick={() => setActiveTab('comparator')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 6,
-              border: 'none',
-              background: activeTab === 'comparator' ? '#d97706' : 'transparent',
-              color: activeTab === 'comparator' ? '#fff' : '#94a3b8',
-              fontWeight: 600,
-              fontSize: 13,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            🏆 Comparador de Tops ({savedTops.length})
-          </button>
-        </div>
+        {/* Pestañas Principales (Ocultas en Traumatología para máxima sobriedad quirúrgica) */}
+        {selectedModuleId !== 'traumatology_psi' ? (
+          <div style={{ display: 'flex', gap: 8, background: '#0f172a', padding: 4, borderRadius: 8, border: '1px solid #334155' }}>
+            <button
+              onClick={() => setActiveTab('lab')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: 'none',
+                background: activeTab === 'lab' ? '#0284c7' : 'transparent',
+                color: activeTab === 'lab' ? '#fff' : '#94a3b8',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              🔬 Laboratorio & NSGA-II
+            </button>
+            <button
+              onClick={() => setActiveTab('comparator')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 6,
+                border: 'none',
+                background: activeTab === 'comparator' ? '#d97706' : 'transparent',
+                color: activeTab === 'comparator' ? '#fff' : '#94a3b8',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              🏆 Comparador de Tops ({savedTops.length})
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(15, 23, 42, 0.9)', padding: '8px 16px', borderRadius: 8, border: '1px solid #0284c7' }}>
+            <span style={{ fontSize: 13, color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+              🩺 Planificación Quirúrgica Point-of-Care (MDR 2017/745 Anexo XIII)
+            </span>
+          </div>
+        )}
 
         <div style={{ textAlign: 'right', fontSize: 12 }}>
           <span style={{ padding: '4px 10px', borderRadius: 999, background: health?.status === 'healthy' ? '#064e3b' : '#7f1d1d', color: health?.status === 'healthy' ? '#6ee7b7' : '#fca5a5' }}>
@@ -1100,66 +1109,77 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
             </div>
             )}
 
-            {/* Banco de Tops Guardados */}
-            <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #f59e0b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 13, color: '#f59e0b' }}>🏆 Tops Guardados ({savedTops.length})</h3>
-                {savedTops.length > 0 && (
-                  <button
-                    onClick={() => setActiveTab('comparator')}
-                    style={{ fontSize: 11, background: '#78350f', color: '#fde68a', border: '1px solid #b45309', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' }}
-                  >
-                    Comparar →
-                  </button>
-                )}
-              </div>
-
-              {savedTops.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>
-                  Aún no has guardado diseños Top. Selecciona cualquier diseño y pulsa <strong>"⭐ Guardar como Top"</strong>.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
-                  {savedTops.map((top) => (
-                    <div
-                      key={top.id}
-                      style={{
-                        background: '#0f172a',
-                        borderRadius: 6,
-                        padding: '6px 8px',
-                        border: '1px solid #334155',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      }}
+            {/* Banco de Tops Guardados (Solo para módulos de ingeniería eólica/industrial) */}
+            {selectedModuleId !== 'traumatology_psi' ? (
+              <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #f59e0b' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h3 style={{ margin: 0, fontSize: 13, color: '#f59e0b' }}>🏆 Tops Guardados ({savedTops.length})</h3>
+                  {savedTops.length > 0 && (
+                    <button
+                      onClick={() => setActiveTab('comparator')}
+                      style={{ fontSize: 11, background: '#78350f', color: '#fde68a', border: '1px solid #b45309', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' }}
                     >
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8' }}>{top.code}</div>
-                        <div style={{ fontSize: 10, color: '#94a3b8' }}>
-                          ⚡ {formatPower(top.metrics.power_output || 0)} | ⚖️ {formatMass(top.metrics.rotor_mass || 0)}
+                      Comparar →
+                    </button>
+                  )}
+                </div>
+
+                {savedTops.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>
+                    Aún no has guardado diseños Top. Selecciona cualquier diseño y pulsa <strong>"⭐ Guardar como Top"</strong>.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                    {savedTops.map((top) => (
+                      <div
+                        key={top.id}
+                        style={{
+                          background: '#0f172a',
+                          borderRadius: 6,
+                          padding: '6px 8px',
+                          border: '1px solid #334155',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8' }}>{top.code}</div>
+                          <div style={{ fontSize: 10, color: '#94a3b8' }}>
+                            ⚡ {formatPower(top.metrics.power_output || 0)} | ⚖️ {formatMass(top.metrics.rotor_mass || 0)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            onClick={() => handleLoadTopInViewer(top)}
+                            title="Cargar en Visor 3D"
+                            style={{ background: '#0284c7', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer' }}
+                          >
+                            3D
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTop(top.id)}
+                            title="Eliminar"
+                            style={{ background: '#7f1d1d', color: '#fca5a5', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer' }}
+                          >
+                            ✕
+                          </button>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          onClick={() => handleLoadTopInViewer(top)}
-                          title="Cargar en Visor 3D"
-                          style={{ background: '#0284c7', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer' }}
-                        >
-                          3D
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTop(top.id)}
-                          title="Eliminar"
-                          style={{ background: '#7f1d1d', color: '#fca5a5', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer' }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ background: '#0f172a', borderRadius: 8, padding: 14, marginBottom: 16, border: '1px solid #1e293b' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#10b981', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  🛡️ Dispositivo Médico a Medida (MDR)
                 </div>
-              )}
-            </div>
+                <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>
+                  Generación anatómica determinista directa. Sin tanteo estocástico ni variantes competitivas: ajuste geométrico exacto al TAC.
+                </div>
+              </div>
+            )}
 
             {/* Proyectos */}
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #334155' }}>
@@ -2169,24 +2189,30 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   {selectedCandidate && (
-                    <button
-                      onClick={() => handleSaveAsTop(selectedCandidate)}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: 6,
-                        background: '#f59e0b',
-                        color: '#0f172a',
-                        border: 'none',
-                        fontWeight: 700,
-                        fontSize: 12,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      ⭐ Guardar como Top
-                    </button>
+                    selectedModuleId === 'traumatology_psi' ? (
+                      <span style={{ padding: '6px 12px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', color: '#6ee7b7', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        ✓ Instrumental Quirúrgico Conforme MDR
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleSaveAsTop(selectedCandidate)}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          background: '#f59e0b',
+                          color: '#0f172a',
+                          border: 'none',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        ⭐ Guardar como Top
+                      </button>
+                    )
                   )}
                   {selectedCandidate && (
                     <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#94a3b8' }}>
@@ -2290,10 +2316,16 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
             {/* Candidatos Evaluados */}
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, border: '1px solid #334155' }}>
               <h3 style={{ margin: '0 0 14px 0', fontSize: 16, color: '#f8fafc' }}>
-                Historial de Diseños ({candidates.length}) — Haz clic para cargar en el Visor 3D
+                {selectedModuleId === 'traumatology_psi'
+                  ? `Historial de Instrumental del Paciente (${candidates.length})`
+                  : `Historial de Diseños (${candidates.length}) — Haz clic para cargar en el Visor 3D`}
               </h3>
               {candidates.length === 0 ? (
-                <p style={{ color: '#64748b', fontSize: 13 }}>No hay diseños aún en este experimento. Ajuste los parámetros arriba o presione "🚀 Optimizar con NSGA-II".</p>
+                <p style={{ color: '#64748b', fontSize: 13 }}>
+                  {selectedModuleId === 'traumatology_psi'
+                    ? 'No hay instrumental generado aún para este paciente. Presione "⚡ Generar Guía PSI" arriba.'
+                    : 'No hay diseños aún en este experimento. Ajuste los parámetros arriba o presione "🚀 Optimizar con NSGA-II".'}
+                </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto' }}>
                   {candidates.map((c) => {
