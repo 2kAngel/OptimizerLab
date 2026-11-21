@@ -49,10 +49,12 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
   const [loading, setLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [queryInput, setQueryInput] = useState('')
+  const [activeQuery, setActiveQuery] = useState<string>('')
   const [submittingQuery, setSubmittingQuery] = useState(false)
 
   const fetchDebate = async (customQuery?: string) => {
     setLoading(true)
+    const qToSend = customQuery !== undefined ? customQuery : activeQuery
     try {
       const res = await fetch('/api/traumatology/clinical-debate', {
         method: 'POST',
@@ -62,14 +64,18 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
           family_id: familyId,
           parameters,
           metrics,
-          custom_query: customQuery || null,
+          custom_query: qToSend && qToSend.trim() ? qToSend.trim() : null,
         }),
       })
       if (!res.ok) throw new Error('Error al cargar la sesión clínica')
       const data = await res.json()
       setReport(data)
-    } catch (e) {
+      if (customQuery !== undefined) {
+        setActiveQuery(customQuery.trim())
+      }
+    } catch (e: any) {
       console.error(e)
+      alert('Error al comunicar con el Comité Clínico: ' + (e?.message || e))
     } finally {
       setLoading(false)
       setSubmittingQuery(false)
@@ -83,9 +89,16 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
   const handleAskPanel = (e: React.FormEvent) => {
     e.preventDefault()
     if (!queryInput.trim()) return
+    const q = queryInput.trim()
     setSubmittingQuery(true)
-    fetchDebate(queryInput)
+    fetchDebate(q)
     setQueryInput('')
+  }
+
+  const handleResetSession = () => {
+    setActiveQuery('')
+    setQueryInput('')
+    fetchDebate('')
   }
 
   const handleDownloadActa = () => {
@@ -165,10 +178,10 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             type="button"
-            onClick={() => fetchDebate()}
+            onClick={() => fetchDebate(activeQuery || (queryInput.trim() || undefined))}
             disabled={loading}
             style={{
               padding: '8px 14px',
@@ -184,8 +197,27 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
               gap: 6,
             }}
           >
-            🔄 {loading ? 'Actualizando debate...' : 'Re-ejecutar Debate'}
+            🔄 {loading ? 'Actualizando debate...' : activeQuery ? 'Re-ejecutar Debate (Pregunta Activa)' : 'Re-ejecutar Debate'}
           </button>
+          {activeQuery && (
+            <button
+              type="button"
+              onClick={handleResetSession}
+              disabled={loading}
+              title="Borra la pregunta actual y restaura el debate basal del comité"
+              style={{
+                padding: '8px 12px',
+                borderRadius: 6,
+                background: '#334155',
+                color: '#cbd5e1',
+                border: '1px solid #475569',
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              ✖ Limpiar Pregunta
+            </button>
+          )}
           {report && (
             <button
               type="button"
@@ -398,6 +430,52 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
                 </div>
               )
             })}
+          </div>
+
+          {/* Atajos de Preguntas Médicas Frecuentes */}
+          <div style={{ background: '#0f172a', padding: '12px 16px', borderRadius: 8, border: '1px solid #1e293b' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>💡 Preguntas Frecuentes para el Comité:</span>
+              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>(Haz clic en cualquiera para debatir al instante)</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { label: '🦴 Pruebas en animales y cadáveres donantes', q: '¿Sería mejor probar en huesos de animales (cerdo) y luego en cadáveres donantes antes de pacientes reales?' },
+                { label: '🪚 Riesgo de atasco de sierra y virutas', q: '¿Qué pasa si la hoja de sierra oscilante se traba en la ranura o genera virutas?' },
+                { label: '🧼 Esterilización y autoclave a 121 °C', q: '¿Cómo se garantiza la esterilidad y resistencia térmica a 121 °C en autoclave?' },
+                { label: '💰 Justificación de precio: 1.400 € vs 5.80 €', q: '¿Por qué la multinacional cobra 1.400 € por unas guías de plástico?' },
+                { label: '⚖️ Cobertura jurídica MDR Anexo XIII', q: '¿Qué respaldo legal exacto protege al hospital y al cirujano bajo el MDR 2017/745?' },
+              ].map((pill, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setQueryInput(pill.q)
+                    fetchDebate(pill.q)
+                  }}
+                  style={{
+                    background: '#1e293b',
+                    border: '1px solid #38bdf844',
+                    borderRadius: 999,
+                    padding: '5px 12px',
+                    fontSize: 11,
+                    color: '#38bdf8',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#38bdf8'
+                    e.currentTarget.style.background = '#0284c722'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#38bdf844'
+                    e.currentTarget.style.background = '#1e293b'
+                  }}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Formulario para Preguntar al Panel */}

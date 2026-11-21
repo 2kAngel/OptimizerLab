@@ -263,7 +263,7 @@ class ClinicalDebateService:
                     "options": {"temperature": 0.6, "num_predict": 300}
                 }).encode("utf-8")
                 req = urllib.request.Request(ollama_url, data=req_data, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=12) as response:
+                with urllib.request.urlopen(req, timeout=2.5) as response:
                     if response.status == 200:
                         res_json = json.loads(response.read().decode("utf-8"))
                         raw_text = res_json.get("response", "").strip()
