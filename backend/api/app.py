@@ -388,6 +388,29 @@ def download_sample_scan(scan_type: str = "femur", is_right: bool = True):
     )
 
 
+class ClinicalDebateRequest(BaseModel):
+    patient_id: str = "PACIENTE-84021"
+    family_id: str = "distal_femur_cutting_guide"
+    parameters: Optional[Dict[str, Any]] = None
+    metrics: Optional[Dict[str, Any]] = None
+    custom_query: Optional[str] = None
+
+
+@app.post("/api/traumatology/clinical-debate")
+def run_clinical_debate(req: ClinicalDebateRequest):
+    """Ejecuta una Sesión Clínica Multidisciplinar (MiroFish) con 7 perfiles hospitalarios."""
+    from modules.traumatology_psi.debate_service import ClinicalDebateService
+
+    report = ClinicalDebateService.generate_debate(
+        patient_id=req.patient_id,
+        family_id=req.family_id,
+        parameters=req.parameters,
+        metrics=req.metrics,
+        custom_query=req.custom_query,
+    )
+    return report.model_dump()
+
+
 # --- Geometría y Exportación 3D ---
 
 @app.get("/api/geometry/{geometry_hash}/glb")

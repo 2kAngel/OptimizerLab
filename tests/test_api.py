@@ -116,3 +116,28 @@ def test_project_experiment_and_job_endpoints_flow():
 
     finally:
         db.close()
+
+
+def test_clinical_debate_endpoint():
+    from backend.api.app import run_clinical_debate, ClinicalDebateRequest
+
+    req = ClinicalDebateRequest(
+        patient_id="PACIENTE-9999",
+        family_id="distal_femur_cutting_guide",
+        parameters={"valgus_angle": 6.0, "resection_thickness_mm": 9.5},
+        metrics={"slot_deflection_mm": 0.05, "resin_cost_eur": 5.20},
+        custom_query="¿Está validado el lavado con alcohol isopropílico?",
+    )
+    res = run_clinical_debate(req)
+    assert res["patient_id"] == "PACIENTE-9999"
+    assert len(res["messages"]) >= 8
+    assert "economic_impact" in res
+    assert res["economic_impact"]["ahorro_neto_paciente"] > 1000.0
+    # Comprobar que incluye la voz de los distintos estamentos
+    categories = {m["category"] for m in res["messages"]}
+    assert "surgery" in categories
+    assert "nursing" in categories
+    assert "finance" in categories
+    assert "competitor" in categories
+    assert "legal" in categories
+    assert "patient" in categories
