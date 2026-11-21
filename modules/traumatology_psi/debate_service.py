@@ -292,7 +292,68 @@ class ClinicalDebateService:
 
             # Si Ollama está ocupado o tarda más de 12 segundos, generar respuestas semánticas precisas por perfil
             if not ollama_success:
-                if any(w in query_lower for w in ["sierra", "romp", "part", "traba", "atasco", "corte", "hoja", "bisel"]):
+                if any(w in query_lower for w in ["animal", "cerdo", "cadaver", "cadáver", "donante", "fase", "ensayo", "piloto", "sawbone", "prueba", "muestra", "paso a paso", "probar", "etapa"]):
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+1}",
+                            speaker_id="surgeon_vet",
+                            speaker_name="Dr. Valenzuela",
+                            speaker_role="Jefe de Sección de Cirugía Ortopédica",
+                            organization="Servicio de Traumatología",
+                            category="surgery",
+                            avatar_color="#f59e0b",
+                            badge_label="TRAUMATÓLOGO VETERANO",
+                            text="Ese es exactamente el sentido común quirúrgico y el rigor de la AO Foundation. Como cirujano veterano, jamás autorizaría que una guía plástica toque a un paciente vivo sin haber 'quemado' el instrumental en el laboratorio de simulación. Primero en huesos sintéticos Sawbones para medir la deflexión de la resina y la holgura de la sierra. Luego en taller cadavérico con donantes humanos para evaluar el tacto del encaje puzzle con periostio real y partes blandas. Si la osteotomía es perfecta en el cadáver, entonces y solo entonces autorizo la serie piloto en nuestro quirófano.",
+                            key_argument="Exigencia de protocolo escalonado estricto: Sawbones sintéticos -> Taller cadavérico -> Serie piloto.",
+                            sentiment="positive",
+                        )
+                    )
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+2}",
+                            speaker_id="surgeon_innov",
+                            speaker_name="Dra. Morante",
+                            speaker_role="Cirujana Especialista en Artroplastia",
+                            organization="Unidad de Rodilla",
+                            category="surgery",
+                            avatar_color="#38bdf8",
+                            badge_label="TRAUMATÓLOGA PRO-PSI",
+                            text="Coincido al 100%. Esa secuencia escalonada es el estándar de oro biomédico (Fase 1: Sawbones de poliuretano -> Fase 2: Wet Lab con espécimen anatómico donante -> Fase 3: Piloto hospitalario n=5 con comité ético -> Fase 4: Despliegue general). En el taller cadavérico validamos además la estabilidad del anclaje frente a la tracción de los separadores de Hoffman. Y en la fase piloto en pacientes reales, la caja de instrumental metálico convencional permanece abierta en la mesa de mayo: riesgo cero para el enfermo.",
+                            key_argument="Estandarización de 4 fases de validación preclínica y reversibilidad total en quirófano.",
+                            sentiment="positive",
+                        )
+                    )
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+3}",
+                            speaker_id="legal_counsel",
+                            speaker_name="Lic. Ignacio Arrieta",
+                            speaker_role="Jefe del Gabinete Jurídico & Compliance",
+                            organization="Comité Ético (CEIm)",
+                            category="legal",
+                            avatar_color="#8b5cf6",
+                            badge_label="ASESOR JURÍDICO (LEGAL)",
+                            text="Desde la perspectiva regulatoria y bioética, esa es la vía canónica exigida por la Agencia Española de Medicamentos y Productos Sanitarios (AEMPS) y el Comité Ético (CEIm). El informe de validación en modelo anatómico y donante humano es el requisito previo indispensable para autorizar la serie piloto en humanos bajo MDR Anexo XIII. La trazabilidad forense por hash SHA-256 se aplica desde la primera prueba en Sawbone.",
+                            key_argument="Aprobación preceptiva del CEIm basada en datos preclínicos de Sawbone y cadáver.",
+                            sentiment="positive",
+                        )
+                    )
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+4}",
+                            speaker_id="finance_director",
+                            speaker_name="D. Fernando Beltrán",
+                            speaker_role="Director Económico",
+                            organization="Servicio de Salud Autonómico",
+                            category="finance",
+                            avatar_color="#10b981",
+                            badge_label="DIRECCIÓN FINANCIERA",
+                            text="Desde gerencia aprobamos de inmediato la partida para el taller cadavérico: 4 piezas anatómicas de donante y bloques Sawbones cuestan menos de 1.800 €. Comparado con un solo fallo de aflojamiento protésico de 25.000 € o con el sobrecoste de 630.000 € de las multinacionales, financiar el wet-lab preclínico es la inversión más rentable y segura que puede hacer este hospital.",
+                            key_argument="Financiación inmediata del wet-lab cadavérico (1.800 €) como garantía de éxito hospitalario.",
+                            sentiment="positive",
+                        )
+                    )
+                elif any(w in query_lower for w in ["sierra", "romp", "part", "traba", "atasco", "corte", "hoja", "bisel"]):
                     messages.append(
                         DebateMessage(
                             id=f"msg-ans-{query_msg_id+1}",
