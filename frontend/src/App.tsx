@@ -167,6 +167,94 @@ export default function App() {
   const [lateralityOverride, setLateralityOverride] = useState(false)
   const [patientIdInput, setPatientIdInput] = useState('PACIENTE-84021')
 
+  // Expedientes Clínicos Unificados de Pacientes (Fémur + Tibia por paciente)
+  interface PatientDossier {
+    femurScan?: any
+    tibiaScan?: any
+  }
+  const [patientDossiers, setPatientDossiers] = useState<Record<string, PatientDossier>>(() => {
+    try {
+      const saved = localStorage.getItem('designlab_patient_dossiers')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  // Estado de Conflicto Anatómico (ej. dos tibias derechas al mismo paciente)
+  const [scanConflict, setScanConflict] = useState<{
+    boneType: string
+    laterality: string
+    existingFilename: string
+    newFilename: string
+    newScanData: any
+  } | null>(null)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('designlab_patient_dossiers', JSON.stringify(patientDossiers))
+    } catch (e) {
+      console.warn(e)
+    }
+  }, [patientDossiers])
+
+  const applyScanDataToDossier = (data: any, targetProjectId?: string) => {
+    const projId = targetProjectId || selectedProjectId
+    setPatientScan(data)
+    if (data.width_ml) {
+      setFemurWidthMl(data.width_ml)
+      setTibiaPlateauWidth(data.width_ml)
+    }
+    if (data.depth_ap) setFemurDepthAp(data.depth_ap)
+    if (data.is_right !== undefined) {
+      setPrescribedLaterality(data.is_right ? 'right' : 'left')
+    }
+
+    if (projId) {
+      const isTibia = data.detected_bone === 'tibia'
+      const boneKey = isTibia ? 'tibiaScan' : 'femurScan'
+      setPatientDossiers((prev) => ({
+        ...prev,
+        [projId]: {
+          ...(prev[projId] || {}),
+          [boneKey]: data,
+        },
+      }))
+    }
+
+    if (data.detected_bone === 'tibia') {
+      setSelectedFamilyId('proximal_tibia_cutting_guide')
+      setLogMessage(`✅ TAC Vinculado al Expediente: ${data.filename} (${data.detected_laterality}) — ¡Detectada TIBIA! Conmutando a Guía Tibial Proximal.`)
+    } else if (data.detected_bone === 'femur') {
+      setSelectedFamilyId('distal_femur_cutting_guide')
+      setLogMessage(`✅ TAC Vinculado al Expediente: ${data.filename} (${data.detected_laterality}) — ¡Detectado FÉMUR! Conmutando a Guía Femoral Distal.`)
+    }
+    setScanConflict(null)
+  }
+
+  const handleSelectPatient = (projId: string) => {
+    setSelectedProjectId(projId)
+    const p = projects.find((x) => x.id === projId)
+    if (p) setPatientIdInput(p.name)
+    const dossier = patientDossiers[projId]
+    if (dossier) {
+      if (selectedFamilyId === 'distal_femur_cutting_guide' && dossier.femurScan) {
+        setPatientScan(dossier.femurScan)
+        setFemurWidthMl(dossier.femurScan.width_ml)
+        setFemurDepthAp(dossier.femurScan.depth_ap)
+        setPrescribedLaterality(dossier.femurScan.is_right ? 'right' : 'left')
+      } else if (selectedFamilyId === 'proximal_tibia_cutting_guide' && dossier.tibiaScan) {
+        setPatientScan(dossier.tibiaScan)
+        setTibiaPlateauWidth(dossier.tibiaScan.width_ml)
+        setPrescribedLaterality(dossier.tibiaScan.is_right ? 'right' : 'left')
+      } else if (dossier.femurScan) {
+        setPatientScan(dossier.femurScan)
+      } else if (dossier.tibiaScan) {
+        setPatientScan(dossier.tibiaScan)
+      }
+    }
+  }
+
   const handleLoadSampleScan = async () => {
     setScanLoading(true)
     setLogMessage('Cargando TAC clínico de referencia con segmentación cortical...')
@@ -175,12 +263,7 @@ export default function App() {
       const res = await fetch(`/api/traumatology/load-sample-scan?family_id=${selectedFamilyId}&is_right=${isRight}`, { method: 'POST' })
       if (!res.ok) throw new Error('Error al cargar TAC de muestra')
       const data = await res.json()
-      setPatientScan(data)
-      if (data.width_ml) {
-        setFemurWidthMl(data.width_ml)
-        setTibiaPlateauWidth(data.width_ml)
-      }
-      if (data.depth_ap) setFemurDepthAp(data.depth_ap)
+      applyScanDataToDossier(data)
       setLogMessage(`✅ TAC Clínico Cargado: ${data.filename} (${data.detected_laterality}) — Cotas anatómicas vinculadas con éxito.`)
     } catch (e: any) {
       setLogMessage(`Error: ${e.message}`)
@@ -203,32 +286,58 @@ export default function App() {
       })
       if (!res.ok) throw new Error('Error al procesar el archivo tomográfico')
       const data = await res.json()
-      setPatientScan(data)
-      if (data.width_ml) {
-        setFemurWidthMl(data.width_ml)
-        setTibiaPlateauWidth(data.width_ml)
-      }
-      if (data.depth_ap) setFemurDepthAp(data.depth_ap)
 
-      // Auto-sincronizar Lateralidad Prescrita con la detectada en el TAC
-      if (data.is_right !== undefined) {
-        setPrescribedLaterality(data.is_right ? 'right' : 'left')
+      // Comprobación de Conflicto Anatómico con el expediente del paciente
+      const currentDossier = selectedProjectId ? patientDossiers[selectedProjectId] || {} : {}
+      const isTibia = data.detected_bone === 'tibia'
+      const boneKey = isTibia ? 'tibiaScan' : 'femurScan'
+      const existing = currentDossier[boneKey]
+
+      if (existing && existing.sha256 !== data.sha256 && existing.is_right === data.is_right) {
+        // Conflicto crítico: mismo hueso y misma lateralidad en el mismo paciente
+        setScanConflict({
+          boneType: isTibia ? 'Tibia Proximal' : 'Fémur Distal',
+          laterality: data.detected_laterality,
+          existingFilename: existing.filename,
+          newFilename: data.filename,
+          newScanData: data,
+        })
+        setLogMessage(`🚨 Conflicto Anatómico: El paciente ya tiene una ${isTibia ? 'Tibia' : 'Fémur'} ${data.detected_laterality} vinculada.`)
+        return
       }
 
-      // Auto-conmutar tipo de guía según el hueso detectado (Fémur vs Tibia)
-      if (data.detected_bone === 'tibia') {
-        setSelectedFamilyId('proximal_tibia_cutting_guide')
-        setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — ¡Detectada TIBIA! Conmutando a Guía Tibial Proximal.`)
-      } else if (data.detected_bone === 'femur') {
-        setSelectedFamilyId('distal_femur_cutting_guide')
-        setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — ¡Detectado FÉMUR! Conmutando a Guía Femoral Distal.`)
-      } else {
-        setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — Malla cortical procesada.`)
-      }
+      applyScanDataToDossier(data)
     } catch (err: any) {
       setLogMessage(`Error al subir TAC: ${err.message}`)
     } finally {
       setScanLoading(false)
+    }
+  }
+
+  const handleConfirmReplaceScan = () => {
+    if (!scanConflict) return
+    applyScanDataToDossier(scanConflict.newScanData)
+    setLogMessage(`🔄 TAC Reemplazado en el Expediente: ${scanConflict.newFilename} sustituye a ${scanConflict.existingFilename}.`)
+  }
+
+  const handleCreatePatientForConflictingScan = async () => {
+    if (!scanConflict) return
+    const nextNum = projects.length + 1
+    const newName = `Paciente ${nextNum}`
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName, description: `Expediente clínico para ${scanConflict.newFilename}` }),
+      })
+      if (res.ok) {
+        const newProj = await res.json()
+        await fetchProjects(newProj.id)
+        applyScanDataToDossier(scanConflict.newScanData, newProj.id)
+        setLogMessage(`➕ Creado nuevo expediente «${newName}» para ${scanConflict.newFilename}.`)
+      }
+    } catch (e: any) {
+      setLogMessage(`Error al crear paciente: ${e.message}`)
     }
   }
 
@@ -1200,25 +1309,43 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
               </div>
             )}
 
-            {/* Proyectos */}
+            {/* Proyectos / Expedientes Clínicos */}
             <div style={{ background: '#1e293b', borderRadius: 8, padding: 16, marginBottom: 16, border: '1px solid #334155' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#f8fafc' }}>Proyectos</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 14, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {selectedModuleId === 'traumatology_psi' ? '🏥 Expediente del Paciente' : 'Proyectos'}
+                </h3>
+                {selectedModuleId === 'traumatology_psi' && (
+                  <span style={{ fontSize: 10, background: '#0284c7', color: '#e0f2fe', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                    NHC
+                  </span>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                 <select
                   value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                  onChange={(e) => {
+                    if (selectedModuleId === 'traumatology_psi') {
+                      handleSelectPatient(e.target.value)
+                    } else {
+                      setSelectedProjectId(e.target.value)
+                    }
+                  }}
                   style={{ flex: 1, padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #475569' }}
                 >
-                  {projects.length === 0 && <option value="">Sin proyectos</option>}
+                  {projects.length === 0 && <option value="">{selectedModuleId === 'traumatology_psi' ? 'Sin expedientes registrados' : 'Sin proyectos'}</option>}
                   {projects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                    <option key={p.id} value={p.id}>
+                      {selectedModuleId === 'traumatology_psi' ? `👤 ${p.name}` : p.name}
+                    </option>
                   ))}
                 </select>
                 {selectedProjectId && (
                   <button
                     type="button"
                     onClick={handleDeleteProject}
-                    title="Eliminar proyecto"
+                    title={selectedModuleId === 'traumatology_psi' ? 'Eliminar expediente' : 'Eliminar proyecto'}
                     style={{ padding: '0 10px', borderRadius: 6, background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', cursor: 'pointer', fontSize: 13 }}
                   >
                     ✕
@@ -1226,10 +1353,92 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 )}
               </div>
 
+              {/* Si es traumatología, mostrar el resumen de huesos vinculados al paciente activo */}
+              {selectedModuleId === 'traumatology_psi' && selectedProjectId && (
+                <div style={{ marginBottom: 12, padding: 10, background: '#0f172a', borderRadius: 6, border: '1px solid #334155' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>📋 TACs del Paciente</span>
+                    <span style={{ fontSize: 10, color: '#94a3b8' }}>MDR Clase I</span>
+                  </div>
+
+                  {/* Fémur Distal */}
+                  <div
+                    onClick={() => {
+                      setSelectedFamilyId('distal_femur_cutting_guide')
+                      const dossier = patientDossiers[selectedProjectId]
+                      if (dossier?.femurScan) {
+                        setPatientScan(dossier.femurScan)
+                        setFemurWidthMl(dossier.femurScan.width_ml)
+                        setFemurDepthAp(dossier.femurScan.depth_ap)
+                        setPrescribedLaterality(dossier.femurScan.is_right ? 'right' : 'left')
+                      }
+                    }}
+                    style={{
+                      padding: '7px 9px',
+                      borderRadius: 4,
+                      background: selectedFamilyId === 'distal_femur_cutting_guide' ? '#0369a1' : '#1e293b',
+                      border: `1px solid ${selectedFamilyId === 'distal_femur_cutting_guide' ? '#38bdf8' : '#334155'}`,
+                      marginBottom: 6,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: 11,
+                    }}
+                  >
+                    <span style={{ color: '#f8fafc', fontWeight: selectedFamilyId === 'distal_femur_cutting_guide' ? 700 : 400 }}>
+                      🦴 Fémur Distal
+                    </span>
+                    {patientDossiers[selectedProjectId]?.femurScan ? (
+                      <span style={{ color: '#34d399', fontSize: 10, fontWeight: 600 }}>
+                        ✓ {patientDossiers[selectedProjectId]?.femurScan?.detected_laterality || (patientDossiers[selectedProjectId]?.femurScan?.is_right ? 'Derecha' : 'Izquierda')}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#64748b', fontSize: 10, fontStyle: 'italic' }}>Sin TAC</span>
+                    )}
+                  </div>
+
+                  {/* Tibia Proximal */}
+                  <div
+                    onClick={() => {
+                      setSelectedFamilyId('proximal_tibia_cutting_guide')
+                      const dossier = patientDossiers[selectedProjectId]
+                      if (dossier?.tibiaScan) {
+                        setPatientScan(dossier.tibiaScan)
+                        setTibiaPlateauWidth(dossier.tibiaScan.width_ml)
+                        setPrescribedLaterality(dossier.tibiaScan.is_right ? 'right' : 'left')
+                      }
+                    }}
+                    style={{
+                      padding: '7px 9px',
+                      borderRadius: 4,
+                      background: selectedFamilyId === 'proximal_tibia_cutting_guide' ? '#0369a1' : '#1e293b',
+                      border: `1px solid ${selectedFamilyId === 'proximal_tibia_cutting_guide' ? '#38bdf8' : '#334155'}`,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: 11,
+                    }}
+                  >
+                    <span style={{ color: '#f8fafc', fontWeight: selectedFamilyId === 'proximal_tibia_cutting_guide' ? 700 : 400 }}>
+                      🦵 Tibia Proximal
+                    </span>
+                    {patientDossiers[selectedProjectId]?.tibiaScan ? (
+                      <span style={{ color: '#34d399', fontSize: 10, fontWeight: 600 }}>
+                        ✓ {patientDossiers[selectedProjectId]?.tibiaScan?.detected_laterality || (patientDossiers[selectedProjectId]?.tibiaScan?.is_right ? 'Derecha' : 'Izquierda')}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#64748b', fontSize: 10, fontStyle: 'italic' }}>Sin TAC</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <form onSubmit={handleCreateProject}>
                 <input
                   type="text"
-                  placeholder="Nuevo proyecto..."
+                  placeholder={selectedModuleId === 'traumatology_psi' ? 'Nuevo paciente (ej. Paciente 2)...' : 'Nuevo proyecto...'}
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
                   style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, background: '#0f172a', color: '#f8fafc', border: '1px solid #475569', marginBottom: 8 }}
@@ -1239,7 +1448,7 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                   disabled={loading || !newProjectName.trim()}
                   style={{ width: '100%', padding: '8px', borderRadius: 6, background: '#0284c7', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                 >
-                  + Crear Proyecto
+                  {selectedModuleId === 'traumatology_psi' ? '+ Registrar Paciente' : '+ Crear Proyecto'}
                 </button>
               </form>
             </div>
@@ -1632,6 +1841,81 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 </div>
               </div>
 
+              {/* ALERTA DE CONFLICTO DE INTEGRIDAD ANATÓMICA */}
+              {scanConflict && (
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #450a0a 0%, #1e1b4b 100%)',
+                    borderRadius: 8,
+                    padding: 16,
+                    marginBottom: 18,
+                    border: '2px solid #ef4444',
+                    boxShadow: '0 4px 20px rgba(239, 68, 68, 0.3)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <span style={{ fontSize: 22 }}>🚨</span>
+                    <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fca5a5' }}>
+                      CONFLICTO DE INTEGRIDAD ANATÓMICA — Detección Múltiple del Mismo Hueso
+                    </h4>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#fecaca', lineHeight: 1.5, marginBottom: 12 }}>
+                    El expediente del paciente ya contiene un <strong>{scanConflict.boneType} {scanConflict.laterality}</strong> vinculado (<em>{scanConflict.existingFilename}</em>).
+                    <br />
+                    Un paciente humano no puede tener dos {scanConflict.boneType}s del mismo lado anatómico ({scanConflict.laterality}). El archivo subido (<em>{scanConflict.newFilename}</em>) posee una firma tomográfica 3D (SHA-256) diferente.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={handleConfirmReplaceScan}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 6,
+                        background: '#dc2626',
+                        color: '#fff',
+                        border: 'none',
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🔄 Reemplazar TAC en este Expediente
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreatePatientForConflictingScan}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 6,
+                        background: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ➕ Asignar a Nuevo Paciente
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScanConflict(null)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 6,
+                        background: '#334155',
+                        color: '#cbd5e1',
+                        border: 'none',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✕ Descartar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Módulo de Ingesta Tomográfica (TAC / DICOM / Malla Ósea) & Protocolo Anti-Error */}
               <div style={{ background: '#0f172a', borderRadius: 8, padding: 16, marginBottom: 18, border: '1px solid #334155' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -1704,7 +1988,16 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button
                         type="button"
-                        onClick={() => setSelectedFamilyId('distal_femur_cutting_guide')}
+                        onClick={() => {
+                          setSelectedFamilyId('distal_femur_cutting_guide')
+                          const dossier = selectedProjectId ? patientDossiers[selectedProjectId] : null
+                          if (dossier?.femurScan) {
+                            setPatientScan(dossier.femurScan)
+                            setFemurWidthMl(dossier.femurScan.width_ml)
+                            setFemurDepthAp(dossier.femurScan.depth_ap)
+                            setPrescribedLaterality(dossier.femurScan.is_right ? 'right' : 'left')
+                          }
+                        }}
                         style={{
                           flex: 1,
                           padding: '6px',
@@ -1721,7 +2014,15 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                       </button>
                       <button
                         type="button"
-                        onClick={() => setSelectedFamilyId('proximal_tibia_cutting_guide')}
+                        onClick={() => {
+                          setSelectedFamilyId('proximal_tibia_cutting_guide')
+                          const dossier = selectedProjectId ? patientDossiers[selectedProjectId] : null
+                          if (dossier?.tibiaScan) {
+                            setPatientScan(dossier.tibiaScan)
+                            setTibiaPlateauWidth(dossier.tibiaScan.width_ml)
+                            setPrescribedLaterality(dossier.tibiaScan.is_right ? 'right' : 'left')
+                          }
+                        }}
                         style={{
                           flex: 1,
                           padding: '6px',
