@@ -394,6 +394,7 @@ class ClinicalDebateRequest(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
     metrics: Optional[Dict[str, Any]] = None
     custom_query: Optional[str] = None
+    use_ollama: bool = False
 
 
 @app.post("/api/traumatology/clinical-debate")
@@ -407,6 +408,7 @@ def run_clinical_debate(req: ClinicalDebateRequest):
         parameters=req.parameters,
         metrics=req.metrics,
         custom_query=req.custom_query,
+        use_ollama=req.use_ollama,
     )
     return report.model_dump()
 

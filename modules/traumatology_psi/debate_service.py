@@ -52,6 +52,7 @@ class ClinicalDebateService:
         parameters: Optional[Dict[str, Any]] = None,
         metrics: Optional[Dict[str, Any]] = None,
         custom_query: Optional[str] = None,
+        use_ollama: bool = False,
     ) -> ClinicalDebateReport:
         p = parameters or {}
         m = metrics or {}
@@ -241,58 +242,88 @@ class ClinicalDebateService:
                 )
             )
 
-            # Intentar generar respuestas con Ollama qwen3:4b en local
+            # Si se solicita explícitamente Ollama local qwen3:4b
             ollama_success = False
-            try:
-                import urllib.request
-                import json
+            if use_ollama:
+                try:
+                    import urllib.request
+                    import json
 
-                ollama_url = "http://127.0.0.1:11434/api/generate"
-                prompt_ollama = (
-                    f"Eres un comité hospitalario de traumatología debatiendo sobre una guía quirúrgica de rodilla impresa en 3D para el {patient_id}.\n"
-                    f"El médico o cirujano acaba de preguntar: «{custom_query}»\n\n"
-                    f"Responde con dos intervenciones cortas y directas en español:\n"
-                    f"1. [Dr. Valenzuela - Cirujano]: Expresando su preocupación médica o técnica sobre esa pregunta.\n"
-                    f"2. [Dra. Morante - Cirujana Innovadora / Especialista]: Dando la solución biomecánica o clínica exacta.\n"
-                    f"Responde directamente en ese formato."
-                )
-                req_data = json.dumps({
-                    "model": "qwen3:4b",
-                    "prompt": prompt_ollama,
-                    "stream": False,
-                    "options": {"temperature": 0.6, "num_predict": 300}
-                }).encode("utf-8")
-                req = urllib.request.Request(ollama_url, data=req_data, headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=2.5) as response:
-                    if response.status == 200:
-                        res_json = json.loads(response.read().decode("utf-8"))
-                        raw_text = res_json.get("response", "").strip()
-                        if not raw_text and res_json.get("thinking"):
-                            # Si qwen3 dejó la respuesta en thinking o al final
-                            raw_text = res_json.get("thinking", "").strip()
-                        if raw_text and len(raw_text) > 20:
-                            messages.append(
-                                DebateMessage(
-                                    id=f"msg-ollama-{query_msg_id+1}",
-                                    speaker_id="qwen_ai_committee",
-                                    speaker_name="Dr. Valenzuela & Dra. Morante (IA Qwen3:4b Local)",
-                                    speaker_role="Debate en Vivo generado por Ollama",
-                                    organization="Comité de Traumatología",
-                                    category="surgery",
-                                    avatar_color="#8b5cf6",
-                                    badge_label="IA QWEN3 LOCAL",
-                                    text=raw_text,
-                                    key_argument=f"Análisis directo generado por el modelo local qwen3:4b ante: '{custom_query}'.",
-                                    sentiment="positive",
+                    ollama_url = "http://127.0.0.1:11434/api/generate"
+                    prompt_ollama = (
+                        f"Actúa como un comité hospitalario multidisciplinar de traumatología.\n"
+                        f"El médico o cirujano acaba de preguntar: «{custom_query}»\n"
+                        f"Responde directamente en español con las intervenciones de los miembros interpelados (Dr. Valenzuela, Dra. Morante o Mr. Henderson según corresponda). Sé directo, clínico y conciso."
+                    )
+                    req_data = json.dumps({
+                        "model": "qwen3:4b",
+                        "prompt": prompt_ollama,
+                        "stream": False,
+                        "options": {"temperature": 0.6, "num_predict": 250}
+                    }).encode("utf-8")
+                    req = urllib.request.Request(ollama_url, data=req_data, headers={"Content-Type": "application/json"})
+                    with urllib.request.urlopen(req, timeout=45) as response:
+                        if response.status == 200:
+                            res_json = json.loads(response.read().decode("utf-8"))
+                            raw_text = res_json.get("response", "").strip()
+                            if not raw_text and res_json.get("thinking"):
+                                raw_text = res_json.get("thinking", "").strip()
+                            if raw_text and len(raw_text) > 10:
+                                messages.append(
+                                    DebateMessage(
+                                        id=f"msg-ollama-{query_msg_id+1}",
+                                        speaker_id="qwen_ai_committee",
+                                        speaker_name="Ollama (qwen3:4b Local)",
+                                        speaker_role="Inferencia en Vivo desde Modelo Local",
+                                        organization="Comité de Traumatología",
+                                        category="surgery",
+                                        avatar_color="#8b5cf6",
+                                        badge_label="IA QWEN3:4B LOCAL",
+                                        text=raw_text,
+                                        key_argument=f"Respuesta generada en tiempo real por el modelo neuronal local ante: '{custom_query}'.",
+                                        sentiment="positive",
+                                    )
                                 )
-                            )
-                            ollama_success = True
-            except Exception:
-                ollama_success = False
+                                ollama_success = True
+                except Exception as e:
+                    ollama_success = False
 
-            # Si Ollama está ocupado o tarda más de 12 segundos, generar respuestas semánticas precisas por perfil
+            # Si no se usa Ollama o no responde a tiempo, enrutamiento semántico por personaje y especialidad
             if not ollama_success:
-                if any(w in query_lower for w in ["animal", "cerdo", "cadaver", "cadáver", "donante", "fase", "ensayo", "piloto", "sawbone", "prueba", "muestra", "paso a paso", "probar", "etapa"]):
+                # 1. Pregunta dirigida a Mr. Henderson / Lobby / Competencia multinacional
+                if any(w in query_lower for w in ["henderson", "arthur", "competencia", "lobby", "zimmer", "stryker", "medacta", "multinacional", "empresa", "privad"]):
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+1}",
+                            speaker_id="competitor_vp",
+                            speaker_name="Mr. Arthur Henderson",
+                            speaker_role="VP de Asuntos Gubernamentales & Acceso al Mercado",
+                            organization="Consorcio Multinacional Ortopédico (Zimmer-Stryker)",
+                            category="competitor",
+                            avatar_color="#ef4444",
+                            badge_label="LOBBY / COMPETENCIA",
+                            text="¿Que qué opino? Opino que esto roza la temeridad clínica y legal. Nuestras guías de 1.400 € no son solo 30 gramos de resina; son 15 años de R&D, ensayos clínicos multicéntricos y una póliza de responsabilidad civil corporativa de 50 millones de euros que cubre al cirujano y al hospital ante cualquier demanda. Si su guía impresa de 5 euros flecta 0.2 mm y desvía la resección femoral, arruinando una prótesis de 4.000 € y provocando un recambio prematuro a los 2 años, ¿quién asumirá la indemnización de 200.000 € al paciente? ¿El software de código abierto? ¿La resina? La calidad, la bioseguridad y el respaldo jurídico tienen un precio, y ese precio son 1.400 €.",
+                            key_argument="Defensa agresiva del sobreprecio de 1.400 € amparándose en pólizas de responsabilidad civil e I+D.",
+                            sentiment="hostile",
+                        )
+                    )
+                    messages.append(
+                        DebateMessage(
+                            id=f"msg-ans-{query_msg_id+2}",
+                            speaker_id="finance_director",
+                            speaker_name="D. Fernando Beltrán",
+                            speaker_role="Director Económico",
+                            organization="Servicio de Salud Autonómico",
+                            category="finance",
+                            avatar_color="#10b981",
+                            badge_label="DIRECCIÓN FINANCIERA",
+                            text="Señor Henderson, a quien demandaríamos los ciudadanos es al gestor público que siga autorizando pagar 1.400 € por paciente a su cártel cuando la tecnología actual permite fabricar instrumental de igual o superior precisión en el propio hospital por 5.80 €. Su monopolio de 630.000 € anuales en este centro se ha terminado.",
+                            key_argument="Respuesta de gerencia: fin de los sobrecostes monopolísticos e inviabilidad del modelo de 1.400 €.",
+                            sentiment="positive",
+                        )
+                    )
+                # 2. Pregunta sobre validación preclínica, animales, cadáveres donantes y fases
+                elif any(w in query_lower for w in ["animal", "cerdo", "cadaver", "cadáver", "donante", "fase", "ensayo", "piloto", "sawbone", "prueba", "muestra", "paso a paso", "probar", "etapa"]):
                     messages.append(
                         DebateMessage(
                             id=f"msg-ans-{query_msg_id+1}",

@@ -51,10 +51,12 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
   const [queryInput, setQueryInput] = useState('')
   const [activeQuery, setActiveQuery] = useState<string>('')
   const [submittingQuery, setSubmittingQuery] = useState(false)
+  const [useOllama, setUseOllama] = useState<boolean>(false)
 
-  const fetchDebate = async (customQuery?: string) => {
+  const fetchDebate = async (customQuery?: string, forceOllama?: boolean) => {
     setLoading(true)
     const qToSend = customQuery !== undefined ? customQuery : activeQuery
+    const ollamaActive = forceOllama !== undefined ? forceOllama : useOllama
     try {
       const res = await fetch('/api/traumatology/clinical-debate', {
         method: 'POST',
@@ -65,6 +67,7 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
           parameters,
           metrics,
           custom_query: qToSend && qToSend.trim() ? qToSend.trim() : null,
+          use_ollama: ollamaActive,
         }),
       })
       if (!res.ok) throw new Error('Error al cargar la sesión clínica')
@@ -178,7 +181,34 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Selector de Motor de Inferencia */}
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              color: useOllama ? '#c084fc' : '#94a3b8',
+              cursor: 'pointer',
+              background: '#0f172a',
+              padding: '7px 12px',
+              borderRadius: 6,
+              border: `1px solid ${useOllama ? '#a855f7' : '#334155'}`,
+              userSelect: 'none',
+            }}
+            title="Activa inferencia directa con tu modelo local qwen3:4b en Ollama (requiere ~30-40s de CPU)"
+          >
+            <input
+              type="checkbox"
+              checked={useOllama}
+              onChange={(e) => setUseOllama(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            <span>{useOllama ? '🤖 Ollama (qwen3:4b Local ~35s)' : '⚡ Motor Clínico Experto (Instantáneo)'}</span>
+          </label>
+
           <button
             type="button"
             onClick={() => fetchDebate(activeQuery || (queryInput.trim() || undefined))}
@@ -512,7 +542,7 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
               style={{
                 padding: '10px 18px',
                 borderRadius: 6,
-                background: '#0284c7',
+                background: useOllama ? '#9333ea' : '#0284c7',
                 color: '#fff',
                 border: 'none',
                 fontWeight: 700,
@@ -520,7 +550,9 @@ export const ClinicalDebatePanel: React.FC<ClinicalDebatePanelProps> = ({
                 cursor: submittingQuery || !queryInput.trim() ? 'not-allowed' : 'pointer',
               }}
             >
-              {submittingQuery ? 'Consultando al Comité...' : 'Preguntar al Panel →'}
+              {submittingQuery
+                ? (useOllama ? '🧠 Generando con Ollama en CPU (~35s)...' : 'Consultando al Comité...')
+                : (useOllama ? 'Preguntar a Ollama →' : 'Preguntar al Panel →')}
             </button>
           </form>
         </>
