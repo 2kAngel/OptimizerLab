@@ -157,6 +157,10 @@ export default function App() {
     detected_laterality: string
     cortical_density_check: string
     safety_status: string
+    detected_bone?: string
+    is_right?: boolean
+    confidence_score?: number
+    classification_method?: string
   } | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
   const [prescribedLaterality, setPrescribedLaterality] = useState<'right' | 'left'>('right')
@@ -1823,11 +1827,14 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {patientScan.filename}
                         </div>
-                        <div style={{ fontSize: 10, color: '#38bdf8', marginTop: 2 }}>
-                          {patientScan.detected_laterality} | Cotas: {patientScan.width_ml}×{patientScan.depth_ap} mm
+                        <div style={{ fontSize: 11, color: '#38bdf8', marginTop: 3, fontWeight: 600 }}>
+                          {patientScan.detected_bone === 'femur' ? '🦴 Fémur Distal' : '🦵 Tibia Proximal'} — {patientScan.detected_laterality}
                         </div>
-                        <div style={{ fontSize: 10, color: '#10b981', marginTop: 2 }}>
-                          Cortical: {patientScan.cortical_density_check}
+                        <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+                          Cotas 3D: {patientScan.width_ml}×{patientScan.depth_ap} mm {patientScan.confidence_score ? `(Fiabilidad: ${patientScan.confidence_score}%)` : ''}
+                        </div>
+                        <div style={{ fontSize: 9, color: '#a855f7', marginTop: 2 }}>
+                          🔍 {patientScan.classification_method || 'Visión Morfológica 3D Intrínseca'}
                         </div>
                       </>
                     ) : (
