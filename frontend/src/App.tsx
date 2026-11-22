@@ -62,8 +62,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'lab' | 'comparator'>('lab')
   const [health, setHealth] = useState<HealthInfo | null>(null)
   const [modules, setModules] = useState<ModuleInfo[]>([])
-  const [selectedModuleId, setSelectedModuleId] = useState<string>('wind_turbines')
-  const [selectedFamilyId, setSelectedFamilyId] = useState<string>('spherical_vawt')
+  const [selectedModuleId, setSelectedModuleId] = useState<string>('traumatology_psi')
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string>('distal_femur_cutting_guide')
   const [selectedScale, setSelectedScale] = useState<ScaleType>('domestic')
 
   const [projects, setProjects] = useState<Project[]>([])
@@ -594,7 +594,10 @@ export default function App() {
       if (res.ok) {
         const data: ModuleInfo[] = await res.json()
         setModules(data)
-        if (data.some((m) => m.id === 'wind_turbines')) {
+        if (data.some((m) => m.id === 'traumatology_psi')) {
+          setSelectedModuleId('traumatology_psi')
+          setSelectedFamilyId('distal_femur_cutting_guide')
+        } else if (data.some((m) => m.id === 'wind_turbines')) {
           setSelectedModuleId('wind_turbines')
         } else if (data.length > 0) {
           setSelectedModuleId(data[0].id)
