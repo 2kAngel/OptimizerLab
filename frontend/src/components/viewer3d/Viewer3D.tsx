@@ -333,8 +333,56 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
             // Centrar hueso en XY para que coapte con el origen donde asienta la guía de corte
             boneObj.position.x -= boneCenter.x
             boneObj.position.y -= boneCenter.y
-            // Alinear el cóndilo / platillo con el asiento anatómico de la guía (Z ~ 2-4 mm)
-            boneObj.position.z -= (boneBox.min.z - 3.0)
+
+            // Detección anatómica del extremo articular de la rodilla (Platillo Tibial vs Cóndilos Femorales):
+            // En anatomía humana:
+            // - El Fémur viene de la cadera hacia la rodilla (cóndilos distales en el extremo inferior min.z)
+            // - La Tibia nace en la rodilla (platillo proximal en el extremo superior max.z) y baja al tobillo (min.z)
+            const isTibiaGuide = familyId?.includes('tibia') || false
+            const zLen = boneBox.max.z - boneBox.min.z
+            const topThresh = boneBox.max.z - 0.15 * zLen
+            const botThresh = boneBox.min.z + 0.15 * zLen
+            let topSumR = 0, topN = 0
+            let botSumR = 0, botN = 0
+
+            boneObj.traverse((child) => {
+              if ((child as THREE.Mesh).isMesh) {
+                const geom = (child as THREE.Mesh).geometry
+                const pos = geom.attributes.position
+                if (pos) {
+                  const step = Math.max(1, Math.floor(pos.count / 250))
+                  for (let i = 0; i < pos.count; i += step) {
+                    const z = pos.getZ(i)
+                    const x = pos.getX(i) - boneCenter.x
+                    const y = pos.getY(i) - boneCenter.y
+                    const r = Math.sqrt(x * x + y * y)
+                    if (z >= topThresh) {
+                      topSumR += r
+                      topN++
+                    } else if (z <= botThresh) {
+                      botSumR += r
+                      botN++
+                    }
+                  }
+                }
+              }
+            })
+
+            const topAvgR = topN > 0 ? topSumR / topN : 0
+            const botAvgR = botN > 0 ? botSumR / botN : 0
+
+            // Para la tibia: el extremo más ancho es siempre la meseta/platillo tibial (rodilla)
+            // Para el fémur: los cóndilos femorales son la rodilla
+            const kneeIsAtTop = isTibiaGuide ? (topAvgR >= botAvgR) : (topAvgR > botAvgR * 1.5)
+
+            if (kneeIsAtTop) {
+              // El platillo tibial proximal está en max.z: lo posicionamos en el asiento de la guía (Z ~ 4 mm)
+              // y la diáfisis de la tibia desciende hacia el tobillo en -Z
+              boneObj.position.z -= (boneBox.max.z - 4.0)
+            } else {
+              // Los cóndilos distales están en min.z: los posicionamos en el asiento de la guía (Z ~ 3 mm)
+              boneObj.position.z -= (boneBox.min.z - 3.0)
+            }
 
             boneObj.visible = showAssembly
             scene.add(boneObj)
