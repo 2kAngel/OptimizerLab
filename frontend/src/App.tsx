@@ -207,6 +207,92 @@ export default function App() {
     newScanData: any
   } | null>(null)
 
+  // Estado de Discrepancias Biométricas / Advertencias Anatómicas en Amarillo
+  const [dismissedWarnings, setDismissedWarnings] = useState<Record<string, boolean>>({})
+
+  const getBiometricWarnings = () => {
+    if (selectedModuleId !== 'traumatology_psi' || !selectedProjectId) return []
+    if (dismissedWarnings[selectedProjectId]) return []
+    const dossier = patientDossiers[selectedProjectId]
+    if (!dossier) return []
+
+    const warnings: { title: string; detail: string; diff: string }[] = []
+
+    // 1. Comparación Bilateral de Fémures (Derecho vs Izquierdo)
+    if (dossier.femurRight && dossier.femurLeft) {
+      const diff = Math.abs(dossier.femurRight.width_ml - dossier.femurLeft.width_ml)
+      if (diff > 1.8) {
+        warnings.push({
+          title: 'Asimetría Bilateral Femoral',
+          detail: `El Fémur Derecho (${dossier.femurRight.width_ml} mm) y el Fémur Izquierdo (${dossier.femurLeft.width_ml} mm) difieren en ${diff.toFixed(1)} mm.`,
+          diff: `${diff.toFixed(1)} mm`,
+        })
+      }
+    }
+
+    // 2. Comparación Bilateral de Tibias (Derecha vs Izquierda)
+    if (dossier.tibiaRight && dossier.tibiaLeft) {
+      const diff = Math.abs(dossier.tibiaRight.width_ml - dossier.tibiaLeft.width_ml)
+      if (diff > 1.8) {
+        warnings.push({
+          title: 'Asimetría Bilateral Tibial',
+          detail: `La Tibia Derecha (${dossier.tibiaRight.width_ml} mm) y la Tibia Izquierda (${dossier.tibiaLeft.width_ml} mm) difieren en ${diff.toFixed(1)} mm.`,
+          diff: `${diff.toFixed(1)} mm`,
+        })
+      }
+    }
+
+    // 3. Congruencia Articular Rodilla Derecha (Fémur D vs Tibia D)
+    if (dossier.femurRight && dossier.tibiaRight) {
+      const diff = dossier.femurRight.width_ml - dossier.tibiaRight.width_ml
+      if (diff < -1.5 || diff > 9.0) {
+        warnings.push({
+          title: 'Desproporción Articular en Rodilla Derecha',
+          detail: `El Fémur Derecho (${dossier.femurRight.width_ml} mm) y la Tibia Derecha (${dossier.tibiaRight.width_ml} mm) presentan un encaje femorotibial discordante (${diff > 0 ? '+' : ''}${diff.toFixed(1)} mm).`,
+          diff: `${Math.abs(diff).toFixed(1)} mm`,
+        })
+      }
+    }
+
+    // 4. Congruencia Articular Rodilla Izquierda (Fémur I vs Tibia I)
+    if (dossier.femurLeft && dossier.tibiaLeft) {
+      const diff = dossier.femurLeft.width_ml - dossier.tibiaLeft.width_ml
+      if (diff < -1.5 || diff > 9.0) {
+        warnings.push({
+          title: 'Desproporción Articular en Rodilla Izquierda',
+          detail: `El Fémur Izquierdo (${dossier.femurLeft.width_ml} mm) y la Tibia Izquierda (${dossier.tibiaLeft.width_ml} mm) presentan un encaje femorotibial discordante (${diff > 0 ? '+' : ''}${diff.toFixed(1)} mm).`,
+          diff: `${Math.abs(diff).toFixed(1)} mm`,
+        })
+      }
+    }
+
+    // 5. Comparación Cruzada (ej. Fémur D con Tibia I si falta la tibia ipsilateral)
+    if (dossier.femurRight && !dossier.tibiaRight && dossier.tibiaLeft) {
+      const expectedTibia = dossier.femurRight.width_ml - 4.6
+      const diff = Math.abs(dossier.tibiaLeft.width_ml - expectedTibia)
+      if (diff > 3.0) {
+        warnings.push({
+          title: 'Discrepancia Biométrica Inter-Pierna',
+          detail: `El Fémur Derecho (${dossier.femurRight.width_ml} mm) y la Tibia Izquierda (${dossier.tibiaLeft.width_ml} mm) tienen una diferencia de escala inusual (~${diff.toFixed(1)} mm respecto a la media anatómica).`,
+          diff: `${diff.toFixed(1)} mm`,
+        })
+      }
+    }
+    if (dossier.femurLeft && !dossier.tibiaLeft && dossier.tibiaRight) {
+      const expectedTibia = dossier.femurLeft.width_ml - 4.6
+      const diff = Math.abs(dossier.tibiaRight.width_ml - expectedTibia)
+      if (diff > 3.0) {
+        warnings.push({
+          title: 'Discrepancia Biométrica Inter-Pierna',
+          detail: `El Fémur Izquierdo (${dossier.femurLeft.width_ml} mm) y la Tibia Derecha (${dossier.tibiaRight.width_ml} mm) tienen una diferencia de escala inusual (~${diff.toFixed(1)} mm respecto a la media anatómica).`,
+          diff: `${diff.toFixed(1)} mm`,
+        })
+      }
+    }
+
+    return warnings
+  }
+
   useEffect(() => {
     try {
       localStorage.setItem('designlab_patient_dossiers', JSON.stringify(patientDossiers))
@@ -1410,9 +1496,16 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 <div style={{ marginBottom: 12, padding: 10, background: '#0f172a', borderRadius: 6, border: '1px solid #334155' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>📋 TACs del Paciente (Bilateral)</span>
-                    <span style={{ fontSize: 9, background: '#0284c7', color: '#e0f2fe', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>
-                      4 Slots MDR
-                    </span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {getBiometricWarnings().length > 0 && (
+                        <span style={{ fontSize: 9, background: '#78350f', color: '#fde68a', padding: '1px 5px', borderRadius: 3, fontWeight: 700, border: '1px solid #d97706' }} title="Hay advertencias de discrepancia biométrica">
+                          ⚠️ Asimetría
+                        </span>
+                      )}
+                      <span style={{ fontSize: 9, background: '#0284c7', color: '#e0f2fe', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>
+                        4 Slots MDR
+                      </span>
+                    </div>
                   </div>
 
                   {/* BLOQUE RODILLA DERECHA */}
@@ -2018,6 +2111,93 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                   </div>
                 </div>
               )}
+
+              {/* WARNING EN AMARILLO: ALERTA DE DISCREPANCIA BIOMÉTRICA (ASIMETRÍA BILATERAL / INTER-ARTICULAR) */}
+              {(() => {
+                const biometricWarnings = getBiometricWarnings()
+                if (biometricWarnings.length === 0) return null
+                return (
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, #451a03 0%, #1c1917 100%)',
+                      borderRadius: 8,
+                      padding: 16,
+                      marginBottom: 18,
+                      border: '2px solid #f59e0b',
+                      boxShadow: '0 4px 20px rgba(245, 158, 11, 0.25)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 22 }}>⚠️</span>
+                        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fde68a' }}>
+                          AVISO DE DISCREPANCIA BIOMÉTRICA — Asimetría Dimensional Entre Huesos del Paciente
+                        </h4>
+                      </div>
+                      <span style={{ fontSize: 10, background: '#78350f', color: '#fef3c7', padding: '2px 8px', borderRadius: 999, fontWeight: 700, border: '1px solid #d97706' }}>
+                        Alerta No Bloqueante
+                      </span>
+                    </div>
+
+                    <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#fef3c7', lineHeight: 1.5 }}>
+                      Se han detectado variaciones métricas inusuales entre los TACs vinculados a este expediente. Aunque puede responder a <strong>dismetría anatómica real</strong> del paciente, secuelas postraumáticas o cirugía previa, se recomienda verificar que no se hayan mezclado archivos de series o donantes distintos:
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                      {biometricWarnings.map((w, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            background: 'rgba(0, 0, 0, 0.4)',
+                            borderRadius: 6,
+                            padding: '8px 12px',
+                            border: '1px solid #b45309',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            fontSize: 12,
+                          }}
+                        >
+                          <div>
+                            <strong style={{ color: '#fbbf24', marginRight: 6 }}>• {w.title}:</strong>
+                            <span style={{ color: '#fef08a' }}>{w.detail}</span>
+                          </div>
+                          <span style={{ background: '#78350f', color: '#fde68a', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 700, marginLeft: 10, whiteSpace: 'nowrap' }}>
+                            Δ {w.diff}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedProjectId) {
+                            setDismissedWarnings((prev) => ({ ...prev, [selectedProjectId]: true }))
+                            setLogMessage('👁️ Aviso de discrepancia biométrica aceptado bajo criterio médico.')
+                          }
+                        }}
+                        style={{
+                          padding: '7px 14px',
+                          borderRadius: 6,
+                          background: '#d97706',
+                          color: '#fff',
+                          border: 'none',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        👁️ Confirmar y Aceptar Discrepancia (Criterio Quirúrgico)
+                      </button>
+                      <span style={{ fontSize: 11, color: '#d1d5db' }}>
+                        Puedes continuar diseñando la guía PSI normalmente.
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Módulo de Ingesta Tomográfica (TAC / DICOM / Malla Ósea) & Protocolo Anti-Error */}
               <div style={{ background: '#0f172a', borderRadius: 8, padding: 16, marginBottom: 18, border: '1px solid #334155' }}>
