@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Viewer3D } from './components/viewer3d/Viewer3D'
 import { ParetoChart, ParetoPoint } from './components/optimization/ParetoChart'
-import { ClinicalDebatePanel } from './components/clinical_debate/ClinicalDebatePanel'
 
 interface HealthInfo {
   status: string
@@ -61,7 +60,6 @@ export interface SavedTopDesign {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'lab' | 'comparator'>('lab')
-  const [traumaSubTab, setTraumaSubTab] = useState<'surgical' | 'debate'>('surgical')
   const [health, setHealth] = useState<HealthInfo | null>(null)
   const [modules, setModules] = useState<ModuleInfo[]>([])
   const [selectedModuleId, setSelectedModuleId] = useState<string>('wind_turbines')
@@ -978,45 +976,10 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 6, background: '#0f172a', padding: 4, borderRadius: 8, border: '1px solid #334155' }}>
-            <button
-              type="button"
-              onClick={() => setTraumaSubTab('surgical')}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 6,
-                border: 'none',
-                background: traumaSubTab === 'surgical' ? '#0284c7' : 'transparent',
-                color: traumaSubTab === 'surgical' ? '#fff' : '#94a3b8',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              🩺 Planificación Quirúrgica 3D
-            </button>
-            <button
-              type="button"
-              onClick={() => setTraumaSubTab('debate')}
-              style={{
-                padding: '7px 14px',
-                borderRadius: 6,
-                border: 'none',
-                background: traumaSubTab === 'debate' ? '#8b5cf6' : 'transparent',
-                color: traumaSubTab === 'debate' ? '#fff' : '#94a3b8',
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              🏛️ Sesión Clínica & Debate Multidisciplinar
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(2, 132, 199, 0.12)', padding: '6px 16px', borderRadius: 8, border: '1px solid #0284c7' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#38bdf8', letterSpacing: 0.3 }}>
+              🩺 Planificación Quirúrgica 3D (Instrumental a Medida PSI)
+            </span>
           </div>
         )}
 
@@ -1031,14 +994,7 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
       </header>
 
       {/* CONTENIDO SEGÚN PESTAÑA */}
-      {selectedModuleId === 'traumatology_psi' && traumaSubTab === 'debate' ? (
-        <ClinicalDebatePanel
-          patientId={patientIdInput}
-          familyId={selectedFamilyId}
-          parameters={getActiveParameters()}
-          metrics={selectedMetrics || {}}
-        />
-      ) : activeTab === 'lab' ? (
+      {activeTab === 'lab' ? (
         /* VISTA 1: LABORATORIO DE DISEÑO & OPTIMIZACIÓN */
         <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 24 }}>
           {/* Columna Izquierda: Configuración y Banco de Tops */}
