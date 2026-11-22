@@ -245,6 +245,11 @@ class BoneAnatomyService:
             mesh.apply_scale(10.0)
         # Si max_extent >= 80.0, ya se encuentra en milímetros estándar (mm)
 
+    @classmethod
+    def _analyze_bone_mesh(cls, mesh: trimesh.Trimesh, filename: str) -> Dict[str, Any]:
+        """Analiza, clasifica y persiste una malla ósea individual calibrada en mm."""
+        cls.ensure_storage()
+
         # Clasificación puramente geométrica 3D (CERO dependencia del nombre del archivo)
         detected_bone, is_right, confidence = cls.classify_mesh_geometry(mesh)
 
@@ -257,18 +262,15 @@ class BoneAnatomyService:
         long_size = float(extents[long_axis])
 
         # Aislar específicamente la epífisis articular de la rodilla
-        # Para evitar que la cabeza del fémur o los maléolos tobilleros distorsionen el ancho condilar
         if long_size > 180.0:
             v_long = mesh.vertices[:, long_axis]
             min_l, max_l = float(np.min(v_long)), float(np.max(v_long))
             low_verts = mesh.vertices[v_long < (min_l + 70.0)]
             high_verts = mesh.vertices[v_long > (max_l - 70.0)]
 
-            # En el fémur, los cóndilos articulares distales residen en el extremo inferior (o menor Z en NIH)
             if detected_bone == "femur":
                 joint_verts = low_verts if len(low_verts) > 50 else high_verts
             else:
-                # En la tibia, la meseta/platillo proximal articular reside en el extremo superior
                 joint_verts = high_verts if len(high_verts) > 50 else low_verts
 
             if len(joint_verts) > 50:
@@ -282,10 +284,11 @@ class BoneAnatomyService:
             size_y = float(extents[axis_ap])
         size_z = long_size
 
-        # Hash SHA-256 de trazabilidad médica
-        sha = hashlib.sha256(file_bytes if file_bytes else b"reference_scan").hexdigest()
+        # Exportar a bytes para generar hash de trazabilidad
+        stl_bytes = mesh.export(file_type="stl")
+        sha = hashlib.sha256(stl_bytes).hexdigest()
 
-        # Persistir en storage para su uso por el generador
+        # Persistir en storage para su uso por el generador y visor 3D
         out_path = cls.STORAGE_DIR / f"{sha[:16]}.stl"
         mesh.export(str(out_path))
 
@@ -306,6 +309,80 @@ class BoneAnatomyService:
             "cortical_density_check": "VÁLIDO (> 350 HU)",
             "safety_status": "CONFORME PARA PLANIFICACIÓN QUIRÚRGICA",
         }
+
+    @classmethod
+    def process_bone_mesh_file(cls, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+        """
+        Procesa un archivo de malla ósea (.stl, .obj, .ply) o serie tomográfica,
+        soporta tanto huesos individuales como TACs compuestos de rodilla con despiece automático.
+        """
+        cls.ensure_storage()
+        ext = filename.lower().split(".")[-1]
+
+        mesh = None
+        if ext in {"stl", "ply", "obj"} and file_bytes:
+            try:
+                loaded = trimesh.load(io.BytesIO(file_bytes), file_type=ext)
+                if isinstance(loaded, trimesh.Scene):
+                    mesh = trimesh.util.concatenate(loaded.dump())
+                elif isinstance(loaded, trimesh.Trimesh):
+                    mesh = loaded
+            except Exception:
+                mesh = None
+        elif ext == "dcm" and PYDICOM_AVAILABLE and file_bytes:
+            try:
+                ds = pydicom.dcmread(io.BytesIO(file_bytes))
+            except Exception:
+                pass
+
+        if mesh is None or not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+            if "tibia" in filename.lower():
+                mesh = cls.create_reference_proximal_tibia()
+            else:
+                mesh = cls.create_reference_distal_femur()
+
+        # Normalización automática de unidades biomédicas (Metros / Pulgadas / Centímetros a Milímetros)
+        max_extent = float(max(mesh.extents))
+        if max_extent < 3.0:
+            mesh.apply_scale(1000.0)
+        elif 3.0 <= max_extent <= 22.0:
+            mesh.apply_scale(25.4)
+        elif 22.0 < max_extent < 80.0:
+            mesh.apply_scale(10.0)
+
+        # DETECCIÓN DE TAC COMPUESTO DE RODILLA (Múltiples huesos en un solo archivo)
+        components = [c for c in mesh.split(only_watertight=False) if len(c.vertices) > 1000]
+
+        if len(components) >= 2:
+            # Analizar cada cuerpo óseo independiente
+            analyzed_bones = []
+            has_femur = False
+            has_tibia = False
+
+            for i, comp in enumerate(components):
+                bone_info = cls._analyze_bone_mesh(comp, f"{filename}_parte{i+1}")
+                if bone_info["detected_bone"] == "femur" and not has_femur:
+                    bone_info["filename"] = f"{filename} (Fémur Distal)"
+                    analyzed_bones.append(bone_info)
+                    has_femur = True
+                elif bone_info["detected_bone"] == "tibia" and not has_tibia:
+                    bone_info["filename"] = f"{filename} (Tibia Proximal)"
+                    analyzed_bones.append(bone_info)
+                    has_tibia = True
+
+            if has_femur and has_tibia:
+                primary = analyzed_bones[0]
+                return {
+                    **primary,
+                    "is_composite": True,
+                    "composite_bones": analyzed_bones,
+                    "message": "TAC Compuesto de Rodilla Detectado: Se han aislado y asignado automáticamente el Fémur y la Tibia.",
+                }
+
+        # Procesamiento normal de hueso individual
+        single_result = cls._analyze_bone_mesh(mesh, filename)
+        single_result["is_composite"] = False
+        return single_result
 
     @classmethod
     def apply_puzzle_fit(

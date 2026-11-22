@@ -304,6 +304,69 @@ class TraumatologyPsiModule(EngineeringModule):
             ),
         ]
 
+    @staticmethod
+    def _create_embossed_tag(text: str, pixel_size: float = 0.45, relief_depth: float = 0.8) -> trimesh.Trimesh:
+        """Genera relieve alfanumérico 3D (0.8 mm) sobre la resina para identificación física en quirófano."""
+        font_5x7 = {
+            'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+            'B': ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+            'C': ['01111', '10000', '10000', '10000', '10000', '10000', '01111'],
+            'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
+            'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+            'F': ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+            'G': ['01111', '10000', '10000', '10111', '10001', '10001', '01111'],
+            'H': ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+            'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+            'J': ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+            'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+            'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+            'M': ['10001', '11011', '10101', '10001', '10001', '10001', '10001'],
+            'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+            'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+            'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+            'Q': ['01110', '10001', '10001', '10001', '10101', '10010', '01101'],
+            'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+            'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
+            'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+            'U': ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+            'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
+            'W': ['10001', '10001', '10001', '10001', '10101', '11011', '10001'],
+            'X': ['10001', '10001', '01010', '00100', '01010', '10001', '10001'],
+            'Y': ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
+            'Z': ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+            '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
+            '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+            '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
+            '3': ['01110', '10001', '00001', '00110', '00001', '10001', '01110'],
+            '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'],
+            '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+            '6': ['01110', '10000', '11110', '10001', '10001', '10001', '01110'],
+            '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+            '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
+            '9': ['01110', '10001', '10001', '10001', '01111', '00001', '01110'],
+            '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'],
+            '.': ['00000', '00000', '00000', '00000', '00000', '01100', '01100'],
+            ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+        }
+        boxes = []
+        total_w = len(text) * 6 * pixel_size
+        start_x = -total_w / 2.0
+
+        for ch_idx, ch in enumerate(text.upper()):
+            bitmap = font_5x7.get(ch, font_5x7[' '])
+            char_base_x = start_x + ch_idx * 6 * pixel_size
+            for r_idx, row in enumerate(bitmap):
+                y = (6 - r_idx) * pixel_size
+                for c_idx, val in enumerate(row):
+                    if val == '1':
+                        x = char_base_x + c_idx * pixel_size
+                        b = trimesh.creation.box(extents=[pixel_size * 0.95, pixel_size * 0.95, relief_depth])
+                        b.apply_translation([x, y, relief_depth / 2.0])
+                        boxes.append(b)
+        if not boxes:
+            return trimesh.creation.box(extents=[1.0, 1.0, relief_depth])
+        return trimesh.util.concatenate(boxes)
+
     def generate_geometry(self, family_id: str, parameters: dict[str, Any]) -> GeometryOutput:
         """Genera el modelo tridimensional paramétrico e higiénico de la guía PSI."""
         w_ml = float(parameters.get("femur_width_ml", parameters.get("tibia_plateau_width", 72.0)))
@@ -459,6 +522,22 @@ class TraumatologyPsiModule(EngineeringModule):
                 rib = trimesh.creation.box(extents=[rib_th, block_depth * 0.7, block_height * 0.8])
                 rib.apply_translation([rx, -block_depth * 0.3, block_height * 0.4])
                 meshes.append(rib)
+
+        # Grabado en relieve 3D indeleble en la propia pieza (Blindaje Anti-Confusión en Quirófano)
+        patient_code = str(parameters.get("patient_id", "P1")).replace("PACIENTE-", "P").replace("Paciente ", "P")[:5]
+        lat_code = "R" if parameters.get("prescribed_laterality") == "right" else "L"
+
+        if family_id == "distal_femur_cutting_guide":
+            tag_str = f"{patient_code}-{lat_code}-FEM-{valgus:.1f}V"
+            tag_mesh = self._create_embossed_tag(tag_str)
+            tag_mesh.apply_translation([0.0, -block_depth * 0.45, block_height])
+            meshes.append(tag_mesh)
+        elif family_id == "proximal_tibia_cutting_guide":
+            slope = float(parameters.get("posterior_slope", 3.0))
+            tag_str = f"{patient_code}-{lat_code}-TIB-{slope:.1f}S"
+            tag_mesh = self._create_embossed_tag(tag_str)
+            tag_mesh.apply_translation([0.0, -block_depth * 0.45, block_height])
+            meshes.append(tag_mesh)
 
         # Concatenar todos los elementos en una malla sólida unificada
         combined = trimesh.util.concatenate(meshes)

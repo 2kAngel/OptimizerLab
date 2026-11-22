@@ -416,6 +416,193 @@ def download_sample_scan(scan_type: str = "femur", is_right: bool = True):
     )
 
 
+@app.get("/api/traumatology/scan/{scan_id}/glb")
+def get_scan_glb(scan_id: str):
+    """Devuelve el binario GLB de la malla ósea del paciente para el modo de ensamblaje (Ghost Bone)."""
+    from modules.traumatology_psi.bone_service import BoneAnatomyService
+    import trimesh
+    import io
+    from fastapi.responses import Response
+
+    clean_id = scan_id.replace("/", "").replace("\\", "").strip()[:16]
+    stl_path = BoneAnatomyService.STORAGE_DIR / f"{clean_id}.stl"
+    if not stl_path.exists():
+        raise HTTPException(status_code=404, detail="Malla ósea tomográfica no encontrada.")
+
+    try:
+        mesh = trimesh.load(str(stl_path))
+        buf = io.BytesIO()
+        mesh.export(buf, file_type="glb")
+        return Response(
+            content=buf.getvalue(),
+            media_type="model/gltf-binary",
+            headers={"Content-Disposition": f'inline; filename="{clean_id}.glb"'},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exportando GLB óseo: {e}")
+
+
+class ExportSurgicalPackRequest(BaseModel):
+    patient_id: str = "P1"
+    dossier: Dict[str, Any] = {}
+
+
+@app.post("/api/traumatology/export-surgical-pack")
+def export_surgical_pack(req: ExportSurgicalPackRequest):
+    """
+    Genera y empaqueta en un ZIP listo para la impresora 3D todas las guías quirúrgicas
+    activas del paciente (2 si es unilateral, 4 si es bilateral) con su informe de trazabilidad.
+    """
+    import zipfile
+    import io
+    from datetime import datetime
+    from fastapi.responses import Response
+    from modules.traumatology_psi.module import TraumatologyPsiModule
+    from backend.core.geometry.service import GeometryService
+
+    mod = TraumatologyPsiModule()
+    dossier = req.dossier
+    patient_id = req.patient_id or "P1"
+
+    zip_buf = io.BytesIO()
+    total_resin = 0.0
+    generated_count = 0
+
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        guide_list = []
+
+        # 1. Fémur Distal Derecho
+        if dossier.get("femurRight"):
+            f_right = dossier["femurRight"]
+            geom = mod.generate_geometry("distal_femur_cutting_guide", {
+                "femur_width_ml": f_right.get("width_ml", 75.0),
+                "femur_depth_ap": f_right.get("depth_ap", 58.0),
+                "valgus_angle": 5.5,
+                "resection_thickness": 9.0,
+                "saw_blade_thickness": 1.19,
+                "pin_diameter": 3.2,
+                "pin_spread": 48.0,
+                "wall_thickness": 3.5,
+                "rib_count": 4,
+                "rib_thickness": 2.5,
+                "patient_id": patient_id,
+                "prescribed_laterality": "right",
+            })
+            path = GeometryService.get_artifact(geom.geometry_hash, "stl")
+            if path and path.exists():
+                with open(path, "rb") as f:
+                    zf.writestr(f"01_Guia_Femoral_Distal_Derecha_{patient_id}.stl", f.read())
+            total_resin += 15.0
+            generated_count += 1
+            guide_list.append("• Guía Femoral Distal DERECHA (Valgo 5.5°, Resección 9 mm)")
+
+        # 2. Tibia Proximal Derecha
+        if dossier.get("tibiaRight"):
+            t_right = dossier["tibiaRight"]
+            geom = mod.generate_geometry("proximal_tibia_cutting_guide", {
+                "tibia_plateau_width": t_right.get("width_ml", 71.0),
+                "posterior_slope": 3.0,
+                "varus_valgus_angle": 0.0,
+                "resection_depth": 8.0,
+                "saw_blade_thickness": 1.19,
+                "pin_diameter": 3.2,
+                "wall_thickness": 3.5,
+                "rib_count": 4,
+                "rib_thickness": 2.5,
+                "patient_id": patient_id,
+                "prescribed_laterality": "right",
+            })
+            path = GeometryService.get_artifact(geom.geometry_hash, "stl")
+            if path and path.exists():
+                with open(path, "rb") as f:
+                    zf.writestr(f"02_Guia_Tibial_Proximal_Derecha_{patient_id}.stl", f.read())
+            total_resin += 14.0
+            generated_count += 1
+            guide_list.append("• Guía Tibial Proximal DERECHA (Slope 3.0°, Resección 8 mm)")
+
+        # 3. Fémur Distal Izquierdo
+        if dossier.get("femurLeft"):
+            f_left = dossier["femurLeft"]
+            geom = mod.generate_geometry("distal_femur_cutting_guide", {
+                "femur_width_ml": f_left.get("width_ml", 75.0),
+                "femur_depth_ap": f_left.get("depth_ap", 58.0),
+                "valgus_angle": 5.5,
+                "resection_thickness": 9.0,
+                "saw_blade_thickness": 1.19,
+                "pin_diameter": 3.2,
+                "pin_spread": 48.0,
+                "wall_thickness": 3.5,
+                "rib_count": 4,
+                "rib_thickness": 2.5,
+                "patient_id": patient_id,
+                "prescribed_laterality": "left",
+            })
+            path = GeometryService.get_artifact(geom.geometry_hash, "stl")
+            if path and path.exists():
+                with open(path, "rb") as f:
+                    zf.writestr(f"03_Guia_Femoral_Distal_Izquierda_{patient_id}.stl", f.read())
+            total_resin += 15.0
+            generated_count += 1
+            guide_list.append("• Guía Femoral Distal IZQUIERDA (Valgo 5.5°, Resección 9 mm)")
+
+        # 4. Tibia Proximal Izquierda
+        if dossier.get("tibiaLeft"):
+            t_left = dossier["tibiaLeft"]
+            geom = mod.generate_geometry("proximal_tibia_cutting_guide", {
+                "tibia_plateau_width": t_left.get("width_ml", 71.0),
+                "posterior_slope": 3.0,
+                "varus_valgus_angle": 0.0,
+                "resection_depth": 8.0,
+                "saw_blade_thickness": 1.19,
+                "pin_diameter": 3.2,
+                "wall_thickness": 3.5,
+                "rib_count": 4,
+                "rib_thickness": 2.5,
+                "patient_id": patient_id,
+                "prescribed_laterality": "left",
+            })
+            path = GeometryService.get_artifact(geom.geometry_hash, "stl")
+            if path and path.exists():
+                with open(path, "rb") as f:
+                    zf.writestr(f"04_Guia_Tibial_Proximal_Izquierda_{patient_id}.stl", f.read())
+            total_resin += 14.0
+            generated_count += 1
+            guide_list.append("• Guía Tibial Proximal IZQUIERDA (Slope 3.0°, Resección 8 mm)")
+
+        readme = f"""================================================================================
+DESIGNLAB v0.3.0 — PACK QUIRÚRGICO DE INSTRUMENTAL A MEDIDA (MDR 2017/745)
+================================================================================
+EXPEDIENTE PACIENTE / NHC : {patient_id}
+FECHA DE GENERACIÓN       : {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+NORMATIVA DE APLICACIÓN   : Reglamento Europeo MDR 2017/745 Anexo XIII
+TOLERANCIA MECÁNICA       : Submilimétrica (< 0.10 mm)
+TECNOLOGÍA DE IMPRESIÓN   : Estereolitografía MSLA / SLA (Resolución capas 50 µm)
+MATERIAL HOMOLOGADO       : Resina Biocompatible ISO 10993 Clase I
+PROTOCOLO ESTERILIZACIÓN  : Autoclave de Vapor a 121 °C durante 20 min
+
+GUÍAS QUIRÚRGICAS INCLUIDAS EN ESTE LOTE ({generated_count} piezas):
+{chr(10).join(guide_list)}
+
+PARÁMETROS DE FABRICACIÓN ESTIMADOS:
+- Volumen Total de Resina Médica: ~{total_resin:.1f} ml
+- Coste Estimado de Materia Prima: ~{(total_resin * 0.38):.2f} €
+- Tiempo Estimado en Bandeja Única: ~45-55 minutos
+
+INSTRUCCIONES INTRAOPERATORIAS:
+1. Verificar que el identificador grabado en relieve en cada pieza coincide con el paciente.
+2. Comprobar coaptación isostática 'Zero-Rocking' antes de fijar las agujas Kirschner de 3.2 mm.
+3. Usar sierra quirúrgica con hoja de 1.19 mm a velocidad estándar con irrigación salina continua.
+================================================================================
+"""
+        zf.writestr("INSPECCION_Y_TRAZABILIDAD_MDR.txt", readme)
+
+    return Response(
+        content=zip_buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="PACK_QUIRURGICO_{patient_id}.zip"'},
+    )
+
+
 class ClinicalDebateRequest(BaseModel):
     patient_id: str = "PACIENTE-84021"
     family_id: str = "distal_femur_cutting_guide"

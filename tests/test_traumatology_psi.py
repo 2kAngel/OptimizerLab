@@ -157,3 +157,49 @@ def test_nsga2_optimization_on_psi_guide(psi_module):
         assert first_opt["metrics"]["blade_deflection_mm"] > 0.0
     finally:
         db.close()
+
+
+def test_embossed_3d_marking_on_guide(psi_module):
+    """Verifica el grabado en relieve 3D en la guía para trazabilidad física en quirófano."""
+    params = {
+        "femur_width_ml": 75.0,
+        "femur_depth_ap": 60.0,
+        "valgus_angle": 5.5,
+        "patient_id": "P1",
+        "prescribed_laterality": "right",
+    }
+    geo = psi_module.generate_geometry("distal_femur_cutting_guide", params)
+    assert geo.is_valid is True
+    # La geometría con texto 3D en relieve procedural tiene suficientes vértices
+    assert geo.mesh_vertices_count > 300
+
+
+def test_export_surgical_pack_endpoint():
+    """Verifica la generación del ZIP con todas las piezas y el informe MDR Anexo XIII."""
+    import zipfile
+    import io
+    from backend.api.app import export_surgical_pack, ExportSurgicalPackRequest
+
+    req_payload = ExportSurgicalPackRequest(
+        patient_id="PACIENTE-01",
+        dossier={
+            "femurRight": {"width_ml": 72.0, "depth_ap": 50.0},
+            "tibiaRight": {"width_ml": 71.0},
+        },
+    )
+
+    resp = export_surgical_pack(req_payload)
+    assert resp.status_code == 200
+    assert resp.media_type == "application/zip"
+
+    # Verificar contenido del ZIP
+    zf = zipfile.ZipFile(io.BytesIO(resp.body))
+    namelist = zf.namelist()
+    assert "INSPECCION_Y_TRAZABILIDAD_MDR.txt" in namelist
+    assert any("Femoral" in name for name in namelist)
+    assert any("Tibial" in name for name in namelist)
+
+    report_content = zf.read("INSPECCION_Y_TRAZABILIDAD_MDR.txt").decode("utf-8")
+    assert "PACIENTE-01" in report_content
+    assert "MDR 2017/745" in report_content
+

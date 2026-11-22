@@ -408,47 +408,94 @@ export default function App() {
   }
 
   const handleUploadScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = e.target.files
+    if (!files || files.length === 0) return
     setScanLoading(true)
-    setLogMessage(`Procesando archivo tomográfico del paciente: ${file.name}...`)
+    setLogMessage(`Procesando ${files.length} archivo(s) tomográfico(s)...`)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const res = await fetch('/api/traumatology/upload-scan', {
-        method: 'POST',
-        body: formData,
-      })
-      if (!res.ok) throw new Error('Error al procesar el archivo tomográfico')
-      const data = await res.json()
-
-      // Comprobación de Conflicto Anatómico con el expediente del paciente (Bilateral: 4 slots)
-      const currentDossier = selectedProjectId ? patientDossiers[selectedProjectId] || {} : {}
-      const isTibia = data.detected_bone === 'tibia'
-      const isRight = data.is_right !== undefined ? data.is_right : (data.detected_laterality?.toLowerCase().includes('derech') ?? true)
-      const boneKey: keyof PatientDossier = isTibia
-        ? (isRight ? 'tibiaRight' : 'tibiaLeft')
-        : (isRight ? 'femurRight' : 'femurLeft')
-      const existing = currentDossier[boneKey]
-
-      if (existing && existing.sha256 !== data.sha256) {
-        // Conflicto crítico: mismo hueso y misma lateralidad en el mismo paciente
-        setScanConflict({
-          boneType: isTibia ? 'Tibia Proximal' : 'Fémur Distal',
-          laterality: isRight ? 'Derecha (Right)' : 'Izquierda (Left)',
-          existingFilename: existing.filename,
-          newFilename: data.filename,
-          newScanData: data,
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const formData = new FormData()
+        formData.append('file', file)
+        const res = await fetch('/api/traumatology/upload-scan', {
+          method: 'POST',
+          body: formData,
         })
-        setLogMessage(`🚨 Conflicto Anatómico: El expediente ya tiene una ${isTibia ? 'Tibia' : 'Fémur'} ${isRight ? 'Derecha' : 'Izquierda'} vinculada.`)
-        return
-      }
+        if (!res.ok) throw new Error(`Error al procesar el archivo ${file.name}`)
+        const data = await res.json()
 
-      applyScanDataToDossier(data)
+        if (data.is_composite && data.composite_bones && data.composite_bones.length > 0) {
+          setLogMessage(`🦴 TAC Compuesto Detectado (${data.composite_bones.length} huesos separados automáticamente en 3D). Vinculando fémur y tibia...`)
+          for (const bonePart of data.composite_bones) {
+            applyScanDataToDossier(bonePart)
+          }
+        } else {
+          // Comprobación de Conflicto Anatómico con el expediente del paciente (Bilateral: 4 slots)
+          const currentDossier = selectedProjectId ? patientDossiers[selectedProjectId] || {} : {}
+          const isTibia = data.detected_bone === 'tibia'
+          const isRight = data.is_right !== undefined ? data.is_right : (data.detected_laterality?.toLowerCase().includes('derech') ?? true)
+          const boneKey: keyof PatientDossier = isTibia
+            ? (isRight ? 'tibiaRight' : 'tibiaLeft')
+            : (isRight ? 'femurRight' : 'femurLeft')
+          const existing = currentDossier[boneKey]
+
+          if (existing && existing.sha256 !== data.sha256) {
+            // Conflicto crítico: mismo hueso y misma lateralidad en el mismo paciente
+            setScanConflict({
+              boneType: isTibia ? 'Tibia Proximal' : 'Fémur Distal',
+              laterality: isRight ? 'Derecha (Right)' : 'Izquierda (Left)',
+              existingFilename: existing.filename,
+              newFilename: data.filename,
+              newScanData: data,
+            })
+            setLogMessage(`🚨 Conflicto Anatómico: El expediente ya tiene una ${isTibia ? 'Tibia' : 'Fémur'} ${isRight ? 'Derecha' : 'Izquierda'} vinculada.`)
+            break
+          }
+
+          applyScanDataToDossier(data)
+        }
+      }
     } catch (err: any) {
       setLogMessage(`Error al subir TAC: ${err.message}`)
     } finally {
       setScanLoading(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleExportSurgicalPack = async () => {
+    const currentDossier = selectedProjectId ? patientDossiers[selectedProjectId] || {} : {}
+    const hasAnyScan = currentDossier.femurRight || currentDossier.tibiaRight || currentDossier.femurLeft || currentDossier.tibiaLeft
+    if (!hasAnyScan) {
+      setLogMessage('⚠️ No hay TACs vinculados en el expediente actual para empaquetar.')
+      return
+    }
+
+    setLogMessage('📦 Empaquetando lote quirúrgico completo con certificado MDR Anexo XIII en ZIP...')
+    try {
+      const res = await fetch('/api/traumatology/export-surgical-pack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: patientIdInput || 'P1',
+          dossier: currentDossier,
+        }),
+      })
+
+      if (!res.ok) throw new Error('Error al generar el paquete quirúrgico')
+
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `PACK_QUIRURGICO_${patientIdInput || 'P1'}.zip`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      setLogMessage(`✅ Pack Quirúrgico descargado: PACK_QUIRURGICO_${patientIdInput || 'P1'}.zip (Incluye STLs de guías activas + Informe de Inspección MDR)`)
+    } catch (err: any) {
+      setLogMessage(`Error al exportar lote quirúrgico: ${err.message}`)
     }
   }
 
@@ -1192,7 +1239,7 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#38bdf8' }}>DESIGNLAB</h1>
-            <span style={{ fontSize: 11, background: '#0369a1', color: '#e0f2fe', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>v0.2.0 Benchmarking</span>
+            <span style={{ fontSize: 11, background: '#0369a1', color: '#e0f2fe', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>v0.3.0 Surgical Point-of-Care</span>
           </div>
           <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: 13 }}>
             {selectedModuleId === 'traumatology_psi'
@@ -1628,6 +1675,33 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                       <span style={{ color: '#64748b', fontSize: 10, fontStyle: 'italic' }}>Sin TAC</span>
                     )}
                   </div>
+
+                  {/* Botón Empaquetar Cirugía (ZIP) */}
+                  <button
+                    type="button"
+                    onClick={handleExportSurgicalPack}
+                    style={{
+                      width: '100%',
+                      marginTop: 10,
+                      marginBottom: 4,
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                      border: '1px solid #34d399',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                    }}
+                    title="Empaqueta en un único ZIP todas las guías activas del paciente junto al informe de trazabilidad MDR Anexo XIII"
+                  >
+                    📦 Empaquetar Cirugía (ZIP)
+                  </button>
                 </div>
               )}
 
@@ -2313,6 +2387,7 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                       <input
                         type="file"
                         id="scan-file-input"
+                        multiple
                         accept=".stl,.obj,.ply,.dcm,.zip"
                         onChange={handleUploadScanFile}
                         style={{ display: 'none' }}
@@ -2333,7 +2408,7 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                           marginBottom: 6,
                         }}
                       >
-                        📁 {scanLoading ? 'Procesando TAC...' : 'Subir TAC / Malla (.stl, .obj, .dcm)'}
+                        📁 {scanLoading ? 'Procesando Malla(s)...' : 'Subir TAC / Mallas (Multi-archivo / Rodilla)'}
                       </label>
                     </div>
                     <button
@@ -2683,6 +2758,26 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                       >
                         📄 Descargar Declaración MDR (Anexo XIII)
                       </button>
+                      <button
+                        onClick={handleExportSurgicalPack}
+                        style={{
+                          padding: '7px 14px',
+                          borderRadius: 6,
+                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          color: '#fff',
+                          border: '1px solid #34d399',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                        }}
+                        title="Empaquetar todas las guías activas del paciente e informe de trazabilidad en un solo archivo ZIP"
+                      >
+                        📦 Empaquetar Cirugía (ZIP 3D)
+                      </button>
                     </div>
                   )}
                 </div>
@@ -2856,6 +2951,7 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                 parameters={selectedCandidate?.parameters}
                 metrics={selectedMetrics}
                 familyId={selectedFamilyId}
+                scanId={patientScan?.scan_id}
               />
             </div>
 

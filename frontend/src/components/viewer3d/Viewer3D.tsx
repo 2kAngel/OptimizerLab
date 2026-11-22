@@ -8,18 +8,21 @@ interface Viewer3DProps {
   parameters?: Record<string, any>
   metrics?: Record<string, number>
   familyId?: string
+  scanId?: string
 }
 
-export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, metrics, familyId }) => {
+export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, metrics, familyId, scanId }) => {
   const mountRef = useRef<HTMLDivElement>(null)
   const isTrauma = familyId?.includes('cutting_guide') || false
   const [wireframe, setWireframe] = useState(false)
   const [autoRotate, setAutoRotate] = useState(false)
   const [showHuman, setShowHuman] = useState(!isTrauma)
+  const [showAssembly, setShowAssembly] = useState(true)
   const [loading, setLoading] = useState(false)
   const [dimensions, setDimensions] = useState<{ width: number; height: number; depth: number } | null>(null)
 
   const currentMeshRef = useRef<THREE.Object3D | null>(null)
+  const ghostBoneRef = useRef<THREE.Object3D | null>(null)
   const humanRef = useRef<THREE.Group | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
@@ -89,6 +92,13 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
       humanRef.current.visible = showHuman
     }
   }, [showHuman])
+
+  // Actualizar visibilidad del hueso fantasma en modo ensamblaje
+  useEffect(() => {
+    if (ghostBoneRef.current) {
+      ghostBoneRef.current.visible = showAssembly
+    }
+  }, [showAssembly])
 
   // Crear silueta humana estilizada de 1.75m (1750mm) de referencia
   const createHumanFigure = () => {
@@ -198,6 +208,10 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
         scene.remove(currentMeshRef.current)
         currentMeshRef.current = null
       }
+      if (ghostBoneRef.current) {
+        scene.remove(ghostBoneRef.current)
+        ghostBoneRef.current = null
+      }
       if (humanRef.current) {
         scene.remove(humanRef.current)
         humanRef.current = null
@@ -291,6 +305,47 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
           }
         )
       }
+
+      // Carga del Hueso del Paciente en modo Ensamblaje Quirúrgico ("Ghost Bone")
+      if (isTrauma && scanId) {
+        const boneLoader = new GLTFLoader()
+        boneLoader.load(
+          `/api/traumatology/scan/${scanId}/glb`,
+          (boneGltf) => {
+            const boneObj = boneGltf.scene
+            boneObj.traverse((child) => {
+              if ((child as THREE.Mesh).isMesh) {
+                const m = child as THREE.Mesh
+                m.material = new THREE.MeshStandardMaterial({
+                  color: 0xf5f0e1, // Tono marfil anatómico óseo
+                  metalness: 0.05,
+                  roughness: 0.85,
+                  transparent: true,
+                  opacity: 0.45,
+                  depthWrite: false,
+                })
+              }
+            })
+
+            const boneBox = new THREE.Box3().setFromObject(boneObj)
+            const boneCenter = boneBox.getCenter(new THREE.Vector3())
+
+            // Centrar hueso en XY para que coapte con el origen donde asienta la guía de corte
+            boneObj.position.x -= boneCenter.x
+            boneObj.position.y -= boneCenter.y
+            // Alinear el cóndilo / platillo con el asiento anatómico de la guía (Z ~ 2-4 mm)
+            boneObj.position.z -= (boneBox.min.z - 3.0)
+
+            boneObj.visible = showAssembly
+            scene.add(boneObj)
+            ghostBoneRef.current = boneObj
+          },
+          undefined,
+          (err) => {
+            console.warn('GLB de hueso para ensamblaje no disponible:', err)
+          }
+        )
+      }
     }
 
     loadGeometry()
@@ -320,7 +375,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
       window.removeEventListener('resize', handleResize)
       renderer.dispose()
     }
-  }, [geometryHash, familyId])
+  }, [geometryHash, familyId, scanId])
 
   const diameterMm = parameters?.rotor_diameter || dimensions?.width || 0
   const heightMm = parameters?.rotor_height || parameters?.tower_height || dimensions?.depth || 0
@@ -390,6 +445,29 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
         >
           {wireframe ? 'Modo Sólido' : 'Modo Alámbrico'}
         </button>
+
+        {isTrauma && (
+          <button
+            onClick={() => setShowAssembly(!showAssembly)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 6,
+              background: showAssembly ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '#1e293b',
+              color: '#fff',
+              border: showAssembly ? '1px solid #34d399' : '1px solid #475569',
+              fontSize: 12,
+              cursor: 'pointer',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: showAssembly ? '0 2px 8px rgba(16, 185, 129, 0.4)' : 'none',
+            }}
+            title="Alterna entre visualizar la guía quirúrgica en solitario o acoplada en ensamblaje sobre el hueso translúcido del paciente"
+          >
+            {showAssembly ? '🦴 Ensamblaje Quirúrgico' : '👁️ Solo Guía'}
+          </button>
+        )}
 
         {!isTrauma && (
           <button
