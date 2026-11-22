@@ -205,7 +205,22 @@ export default function App() {
         setTibiaPlateauWidth(data.width_ml)
       }
       if (data.depth_ap) setFemurDepthAp(data.depth_ap)
-      setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — Malla cortical procesada.`)
+
+      // Auto-sincronizar Lateralidad Prescrita con la detectada en el TAC
+      if (data.is_right !== undefined) {
+        setPrescribedLaterality(data.is_right ? 'right' : 'left')
+      }
+
+      // Auto-conmutar tipo de guía según el hueso detectado (Fémur vs Tibia)
+      if (data.detected_bone === 'tibia') {
+        setSelectedFamilyId('proximal_tibia_cutting_guide')
+        setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — ¡Detectada TIBIA! Conmutando a Guía Tibial Proximal.`)
+      } else if (data.detected_bone === 'femur') {
+        setSelectedFamilyId('distal_femur_cutting_guide')
+        setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — ¡Detectado FÉMUR! Conmutando a Guía Femoral Distal.`)
+      } else {
+        setLogMessage(`✅ TAC Paciente Ingerido: ${data.filename} (${data.detected_laterality}) — Malla cortical procesada.`)
+      }
     } catch (err: any) {
       setLogMessage(`Error al subir TAC: ${err.message}`)
     } finally {
@@ -1676,6 +1691,46 @@ Dr. Col. Nº:                                          Servicio de Ingeniería B
                         }}
                       >
                         🦵 Rodilla IZQUIERDA
+                      </button>
+                    </div>
+
+                    <label style={{ fontSize: 11, color: '#94a3b8', display: 'block', marginTop: 8, marginBottom: 4 }}>
+                      Instrumental a Diseñar:
+                    </label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFamilyId('distal_femur_cutting_guide')}
+                        style={{
+                          flex: 1,
+                          padding: '6px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: selectedFamilyId === 'distal_femur_cutting_guide' ? 700 : 400,
+                          background: selectedFamilyId === 'distal_femur_cutting_guide' ? '#0d9488' : '#0f172a',
+                          color: '#fff',
+                          border: selectedFamilyId === 'distal_femur_cutting_guide' ? '1px solid #2dd4bf' : '1px solid #334155',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🦴 Fémur Distal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFamilyId('proximal_tibia_cutting_guide')}
+                        style={{
+                          flex: 1,
+                          padding: '6px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: selectedFamilyId === 'proximal_tibia_cutting_guide' ? 700 : 400,
+                          background: selectedFamilyId === 'proximal_tibia_cutting_guide' ? '#0d9488' : '#0f172a',
+                          color: '#fff',
+                          border: selectedFamilyId === 'proximal_tibia_cutting_guide' ? '1px solid #2dd4bf' : '1px solid #334155',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🦵 Tibia Proximal
                       </button>
                     </div>
                   </div>

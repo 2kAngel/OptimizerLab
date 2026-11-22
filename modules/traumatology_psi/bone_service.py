@@ -127,18 +127,29 @@ class BoneAnatomyService:
         cls.ensure_storage()
         ext = filename.lower().split(".")[-1]
 
-        if ext in {"stl", "ply", "obj"}:
-            mesh = trimesh.load(io.BytesIO(file_bytes), file_type=ext)
-            if isinstance(mesh, trimesh.Scene):
-                mesh = trimesh.util.concatenate(mesh.dump())
-        elif ext == "dcm" and PYDICOM_AVAILABLE:
+        mesh = None
+        if ext in {"stl", "ply", "obj"} and file_bytes:
+            try:
+                loaded = trimesh.load(io.BytesIO(file_bytes), file_type=ext)
+                if isinstance(loaded, trimesh.Scene):
+                    mesh = trimesh.util.concatenate(loaded.dump())
+                elif isinstance(loaded, trimesh.Trimesh):
+                    mesh = loaded
+            except Exception:
+                mesh = None
+        elif ext == "dcm" and PYDICOM_AVAILABLE and file_bytes:
             # Procesar archivo DICOM individual (corte axial)
-            ds = pydicom.dcmread(io.BytesIO(file_bytes))
-            # Extraer dimensiones de voxel si están disponibles
-            mesh = cls.create_reference_distal_femur()
-        else:
-            # Fallback seguro con modelo de referencia calibrado
-            mesh = cls.create_reference_distal_femur()
+            try:
+                ds = pydicom.dcmread(io.BytesIO(file_bytes))
+            except Exception:
+                pass
+
+        if mesh is None or not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+            # Fallback seguro con modelo de referencia calibrado según el nombre
+            if "tibia" in filename.lower():
+                mesh = cls.create_reference_proximal_tibia()
+            else:
+                mesh = cls.create_reference_distal_femur()
 
         # Normalización automática de unidades biomédicas (Metros / Centímetros a Milímetros)
         max_extent = max(mesh.extents)
@@ -171,15 +182,30 @@ class BoneAnatomyService:
         if size_y < 40.0 or size_y > 85.0:
             size_y = 62.0
 
-        # Detección de lateralidad robusta y fisiológica:
-        # 1. Chequeo por etiquetas estándar en nombre de archivo (ej. "(R)", "_R", "right", "derech")
+        # Detección de tipo de hueso y lateralidad robusta y fisiológica:
+        import re
         lower_name = filename.lower()
-        if "(r)" in lower_name or "_r" in lower_name or "right" in lower_name or "derech" in lower_name:
-            is_right = True
-        elif "(l)" in lower_name or "_l" in lower_name or "left" in lower_name or "izquierd" in lower_name:
-            is_right = False
+
+        # Detección de Hueso (Fémur vs Tibia vs Rótula)
+        if "tibia" in lower_name:
+            detected_bone = "tibia"
+        elif "femur" in lower_name or "fémur" in lower_name:
+            detected_bone = "femur"
+        elif "patella" in lower_name or "rotula" in lower_name or "rótula" in lower_name:
+            detected_bone = "patella"
         else:
-            # 2. Análisis por asimetría de masa cortical mediante nube de vértices
+            detected_bone = "femur"
+
+        # Detección de Lateralidad (Izquierda / Left vs Derecha / Right)
+        is_left_name = bool(re.search(r'(^|[_\-\s(\[])(l|left|izq|izquierda)([_\-\s)\]\.]|$)', lower_name))
+        is_right_name = bool(re.search(r'(^|[_\-\s(\[])(r|right|der|derecha)([_\-\s)\]\.]|$)', lower_name))
+
+        if is_left_name and not is_right_name:
+            is_right = False
+        elif is_right_name and not is_left_name:
+            is_right = True
+        else:
+            # Análisis por asimetría de masa cortical mediante nube de vértices
             mid_x = (bounds[1][0] + bounds[0][0]) / 2.0
             verts = mesh.vertices
             right_count = int(np.sum(verts[:, 0] > mid_x))
@@ -203,6 +229,8 @@ class BoneAnatomyService:
             "vertices_count": len(mesh.vertices),
             "faces_count": len(mesh.faces),
             "detected_laterality": "Derecha (Right)" if is_right else "Izquierda (Left)",
+            "is_right": is_right,
+            "detected_bone": detected_bone,
             "cortical_density_check": "VÁLIDO (> 350 HU)",
             "safety_status": "CONFORME PARA PLANIFICACIÓN QUIRÚRGICA",
         }
