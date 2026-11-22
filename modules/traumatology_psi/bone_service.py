@@ -232,39 +232,55 @@ class BoneAnatomyService:
             else:
                 mesh = cls.create_reference_distal_femur()
 
-        # Normalización automática de unidades biomédicas (Metros / Centímetros a Milímetros)
-        max_extent = max(mesh.extents)
+        # Normalización automática de unidades biomédicas (Metros / Pulgadas / Centímetros a Milímetros)
+        max_extent = float(max(mesh.extents))
         if max_extent < 3.0:
-            # Archivo exportado en metros (ej. 0.45 m = 450 mm)
+            # Archivo exportado en metros (ej. 0.40 m = 400 mm)
             mesh.apply_scale(1000.0)
-        elif max_extent < 30.0:
-            # Archivo exportado en centímetros
+        elif 3.0 <= max_extent <= 22.0:
+            # Archivo exportado en pulgadas (NIH 3D / Visible Human: ej. 15.6 in = 396 mm)
+            mesh.apply_scale(25.4)
+        elif 22.0 < max_extent < 80.0:
+            # Archivo exportado en centímetros (ej. 40 cm = 400 mm)
             mesh.apply_scale(10.0)
-
-        # Calcular cotas tridimensionales normalizadas en mm
-        bounds = mesh.bounds
-        size_x = float(bounds[1][0] - bounds[0][0])
-        size_y = float(bounds[1][1] - bounds[0][1])
-        size_z = float(bounds[1][2] - bounds[0][2])
-
-        # Si el escaneo es de un fémur completo (>160 mm), aislar el ancho condilar distal (rodilla)
-        if size_z > 160.0:
-            # Aislar los 120 mm más distales (donde residen los cóndilos femorales)
-            z_min = float(bounds[0][2])
-            distal_mask = mesh.vertices[:, 2] < (z_min + 120.0)
-            if np.sum(distal_mask) > 100:
-                distal_verts = mesh.vertices[distal_mask]
-                size_x = float(np.max(distal_verts[:, 0]) - np.min(distal_verts[:, 0]))
-                size_y = float(np.max(distal_verts[:, 1]) - np.min(distal_verts[:, 1]))
-
-        # Ajuste a rango anatómico fisiológico adulto (60 - 88 mm) si el escaneo viene inclinado
-        if size_x < 50.0 or size_x > 95.0:
-            size_x = 72.0
-        if size_y < 40.0 or size_y > 85.0:
-            size_y = 62.0
+        # Si max_extent >= 80.0, ya se encuentra en milímetros estándar (mm)
 
         # Clasificación puramente geométrica 3D (CERO dependencia del nombre del archivo)
         detected_bone, is_right, confidence = cls.classify_mesh_geometry(mesh)
+
+        # Identificar eje longitudinal y ejes transversales
+        extents = mesh.extents
+        long_axis = int(np.argmax(extents))
+        other_axes = [i for i in [0, 1, 2] if i != long_axis]
+        axis_ml = other_axes[0]
+        axis_ap = other_axes[1]
+        long_size = float(extents[long_axis])
+
+        # Aislar específicamente la epífisis articular de la rodilla
+        # Para evitar que la cabeza del fémur o los maléolos tobilleros distorsionen el ancho condilar
+        if long_size > 180.0:
+            v_long = mesh.vertices[:, long_axis]
+            min_l, max_l = float(np.min(v_long)), float(np.max(v_long))
+            low_verts = mesh.vertices[v_long < (min_l + 70.0)]
+            high_verts = mesh.vertices[v_long > (max_l - 70.0)]
+
+            # En el fémur, los cóndilos articulares distales residen en el extremo inferior (o menor Z en NIH)
+            if detected_bone == "femur":
+                joint_verts = low_verts if len(low_verts) > 50 else high_verts
+            else:
+                # En la tibia, la meseta/platillo proximal articular reside en el extremo superior
+                joint_verts = high_verts if len(high_verts) > 50 else low_verts
+
+            if len(joint_verts) > 50:
+                size_x = float(np.ptp(joint_verts[:, axis_ml]))
+                size_y = float(np.ptp(joint_verts[:, axis_ap]))
+            else:
+                size_x = float(extents[axis_ml])
+                size_y = float(extents[axis_ap])
+        else:
+            size_x = float(extents[axis_ml])
+            size_y = float(extents[axis_ap])
+        size_z = long_size
 
         # Hash SHA-256 de trazabilidad médica
         sha = hashlib.sha256(file_bytes if file_bytes else b"reference_scan").hexdigest()

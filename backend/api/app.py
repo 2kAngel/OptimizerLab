@@ -344,12 +344,25 @@ def get_experiment_candidates(experiment_id: str, db: Session = Depends(get_db))
 def load_sample_scan(family_id: str = "distal_femur_cutting_guide", is_right: bool = True):
     """Carga una anatomía ósea de referencia (fémur distal o tibia) para pruebas clínicas inmediatas."""
     from modules.traumatology_psi.bone_service import BoneAnatomyService
+    from pathlib import Path
     import io
+
+    # Priorizar mallas anatómicas de alta fidelidad NIH 3D si están disponibles
+    nih_dir = Path("ImagenesTacs/DescargaMujer")
+    bone_type = "tibia" if "tibia" in family_id else "femur"
+    lat_prefix = "r" if is_right else "l"
+    nih_file = nih_dir / f"{lat_prefix}_{bone_type}_female-nih3d.stl"
+
+    if nih_file.exists():
+        with open(nih_file, "rb") as f:
+            data = f.read()
+        return BoneAnatomyService.process_bone_mesh_file(data, nih_file.name)
+
     if "tibia" in family_id:
-        bone = BoneAnatomyService.create_reference_proximal_tibia(width_ml=74.0, is_right=is_right)
+        bone = BoneAnatomyService.create_reference_proximal_tibia(width_ml=71.0, is_right=is_right)
         fname = f"sample_proximal_tibia_{'right' if is_right else 'left'}.stl"
     else:
-        bone = BoneAnatomyService.create_reference_distal_femur(width_ml=72.0, depth_ap=62.0, is_right=is_right)
+        bone = BoneAnatomyService.create_reference_distal_femur(width_ml=75.0, depth_ap=58.0, is_right=is_right)
         fname = f"sample_distal_femur_{'right' if is_right else 'left'}.stl"
 
     buf = io.BytesIO()
@@ -369,14 +382,29 @@ async def upload_scan(file: UploadFile = File(...)):
 def download_sample_scan(scan_type: str = "femur", is_right: bool = True):
     """Permite al usuario descargar directamente una malla STL anatómica de paciente de muestra."""
     from modules.traumatology_psi.bone_service import BoneAnatomyService
+    from pathlib import Path
     import io
     from fastapi.responses import Response
 
+    nih_dir = Path("ImagenesTacs/DescargaMujer")
+    bone_type = "tibia" if "tibia" in scan_type.lower() else "femur"
+    lat_prefix = "r" if is_right else "l"
+    nih_file = nih_dir / f"{lat_prefix}_{bone_type}_female-nih3d.stl"
+
+    if nih_file.exists():
+        with open(nih_file, "rb") as f:
+            data = f.read()
+        return Response(
+            content=data,
+            media_type="model/stl",
+            headers={"Content-Disposition": f'attachment; filename="{nih_file.name}"'},
+        )
+
     if "tibia" in scan_type.lower():
-        bone = BoneAnatomyService.create_reference_proximal_tibia(width_ml=74.0, is_right=is_right)
+        bone = BoneAnatomyService.create_reference_proximal_tibia(width_ml=71.0, is_right=is_right)
         fname = f"PACIENTE_TIBIA_PROXIMAL_{'DERECHA' if is_right else 'IZQUIERDA'}.stl"
     else:
-        bone = BoneAnatomyService.create_reference_distal_femur(width_ml=72.0, depth_ap=62.0, is_right=is_right)
+        bone = BoneAnatomyService.create_reference_distal_femur(width_ml=75.0, depth_ap=58.0, is_right=is_right)
         fname = f"PACIENTE_FEMUR_DISTAL_{'DERECHO' if is_right else 'IZQUIERDO'}.stl"
 
     buf = io.BytesIO()
