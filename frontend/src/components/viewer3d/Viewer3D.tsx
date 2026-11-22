@@ -433,11 +433,14 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
         }}>
           {isTrauma ? (
             <>
-              <div style={{ fontWeight: 700, color: '#10b981', marginBottom: 4, fontSize: 12 }}>
-                🩺 INSTRUMENTAL PSI (QUIRÓFANO)
+              <div style={{ fontWeight: 700, color: '#10b981', marginBottom: 2, fontSize: 12 }}>
+                🩺 GUÍA PSI DE CORTE (INSTRUMENTAL IMPRESO EN 3D)
               </div>
-              <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: 4 }}>
-                {familyId === 'distal_femur_cutting_guide' ? 'Guía Fémur Distal (Zero-Rocking)' : 'Guía Tibia Proximal (Slope)'}
+              <div style={{ color: '#38bdf8', fontWeight: 600, marginBottom: 4, fontSize: 11 }}>
+                {familyId === 'distal_femur_cutting_guide' ? 'Guía Fémur Distal (Ranura Valgo + 2 Torres de Agujas)' : 'Guía Tibia Proximal (Ranura Slope + 2 Torres de Agujas)'}
+              </div>
+              <div style={{ fontSize: 10, color: '#cbd5e1', marginBottom: 6, background: 'rgba(15,23,42,0.7)', padding: '4px 6px', borderRadius: 4, border: '1px solid #334155', lineHeight: 1.3 }}>
+                ℹ️ <strong>Instrumental Quirúrgico:</strong> Esta pieza es la <em>guía física de resina</em> que se esteriliza y ancla al hueso. Los 2 cilindros son las <strong>torres de fijación</strong> para agujas Kirschner de 3.2 mm (no son cóndilos óseos).
               </div>
               <div>Cotas Totales: <strong style={{ color: '#fff' }}>{dimensions.width.toFixed(0)} × {dimensions.depth.toFixed(0)} × {dimensions.height.toFixed(0)} mm</strong></div>
               {parameters?.valgus_angle_deg !== undefined && (

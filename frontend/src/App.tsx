@@ -291,6 +291,27 @@ export default function App() {
       const res = await fetch(`/api/traumatology/load-sample-scan?family_id=${selectedFamilyId}&is_right=${isRight}`, { method: 'POST' })
       if (!res.ok) throw new Error('Error al cargar TAC de muestra')
       const data = await res.json()
+
+      // Comprobación de Conflicto Anatómico también en carga directa
+      const currentDossier = selectedProjectId ? patientDossiers[selectedProjectId] || {} : {}
+      const isTibia = data.detected_bone === 'tibia'
+      const boneKey: keyof PatientDossier = isTibia
+        ? (isRight ? 'tibiaRight' : 'tibiaLeft')
+        : (isRight ? 'femurRight' : 'femurLeft')
+      const existing = currentDossier[boneKey]
+
+      if (existing && existing.sha256 !== data.sha256) {
+        setScanConflict({
+          boneType: isTibia ? 'Tibia Proximal' : 'Fémur Distal',
+          laterality: isRight ? 'Derecha (Right)' : 'Izquierda (Left)',
+          existingFilename: existing.filename,
+          newFilename: data.filename,
+          newScanData: data,
+        })
+        setLogMessage(`🚨 Conflicto Anatómico: El expediente ya tiene una ${isTibia ? 'Tibia' : 'Fémur'} ${isRight ? 'Derecha' : 'Izquierda'} vinculada.`)
+        return
+      }
+
       applyScanDataToDossier(data)
       setLogMessage(`✅ TAC Clínico Cargado: ${data.filename} (${data.detected_laterality}) — Cotas anatómicas vinculadas con éxito.`)
     } catch (e: any) {
