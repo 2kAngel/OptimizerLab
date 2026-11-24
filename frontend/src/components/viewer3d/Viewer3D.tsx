@@ -254,17 +254,24 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
 
             const maxDim = Math.max(size.x, size.y, size.z) || (isTrauma ? 80 : 1000)
 
-            // Centrar geométricamente para que el pivote sea el origen
-            object.position.x -= center.x
-            object.position.y -= center.y
-            object.position.z -= box.min.z
+            // En traumatología mantenemos el marco XY centrado en el hueso para coaptación milimétrica;
+            // en el resto de módulos centramos la pieza en el origen
+            if (isTrauma) {
+              object.position.z -= box.min.z
+            } else {
+              object.position.x -= center.x
+              object.position.y -= center.y
+              object.position.z -= box.min.z
+            }
 
             scene.add(object)
             currentMeshRef.current = object
 
-            // Centro geométrico vertical del objeto
+            // Centro geométrico del objeto para orbitar la cámara
+            const targetX = isTrauma ? center.x : 0
+            const targetY = isTrauma ? center.y : 0
             const targetZ = size.z / 2
-            targetCenterRef.current.set(0, 0, targetZ)
+            targetCenterRef.current.set(targetX, targetY, targetZ)
 
             // Silueta humana solo en eólica si está activada
             if (showHuman && !isTrauma) {
@@ -288,13 +295,13 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
             const dist = (maxDim / 2) / Math.tan(fovRad / 2) * 1.55
             optimalDistRef.current = dist
 
-            camera.position.set(dist * 0.75, -dist * 1.05, targetZ + dist * 0.65)
+            camera.position.set(targetX + dist * 0.75, targetY - dist * 1.05, targetZ + dist * 0.65)
             camera.near = Math.max(0.5, dist * 0.01)
             camera.far = Math.max(10000, dist * 50)
             camera.updateProjectionMatrix()
 
             // Fijar el objetivo de rotación exactamente en el centro de la pieza
-            controls.target.set(0, 0, targetZ)
+            controls.target.set(targetX, targetY, targetZ)
             controls.update()
             setLoading(false)
           },
@@ -376,12 +383,12 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({ geometryHash, parameters, me
             const kneeIsAtTop = isTibiaGuide ? (topAvgR >= botAvgR) : (topAvgR > botAvgR * 1.5)
 
             if (kneeIsAtTop) {
-              // El platillo tibial proximal está en max.z: lo posicionamos en el asiento de la guía (Z ~ 4 mm)
-              // y la diáfisis de la tibia desciende hacia el tobillo en -Z
-              boneObj.position.z -= (boneBox.max.z - 4.0)
+              // El platillo tibial proximal está en max.z: lo posicionamos en Z = 16 mm
+              // para que el faldón envolvente abrace 16 mm hacia abajo y la ranura corte a altura de resección
+              boneObj.position.z -= (boneBox.max.z - 16.0)
             } else {
-              // Los cóndilos distales están en min.z: los posicionamos en el asiento de la guía (Z ~ 3 mm)
-              boneObj.position.z -= (boneBox.min.z - 3.0)
+              // Los cóndilos distales están en min.z: los posicionamos en el asiento condilar (Z = 4 mm)
+              boneObj.position.z -= (boneBox.min.z - 4.0)
             }
 
             boneObj.visible = showAssembly
