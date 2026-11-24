@@ -624,8 +624,8 @@ class TraumatologyPsiModule(EngineeringModule):
         if abs(min_z) > 1e-4:
             combined.apply_translation([0.0, 0.0, -min_z])
 
-        # Guardar en almacenamiento inmutable SHA-256
-        geom_hash = hashlib.sha256(str(sorted(parameters.items())).encode("utf-8")).hexdigest()
+        # Guardar en almacenamiento inmutable SHA-256 (incluye versión del generador conformal para evitar caché antigua)
+        geom_hash = hashlib.sha256(f"v0.3.1-conformal:{family_id}:{sorted(parameters.items())}".encode("utf-8")).hexdigest()
         props = GeometryService.process_and_persist_mesh(combined, geom_hash)
 
         return GeometryOutput(
