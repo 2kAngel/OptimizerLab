@@ -1,10 +1,38 @@
-# OptimizerLab (DesignLab)
+# OptimizerLab (DesignLab) — v0.3.0
 
-Plataforma de descubrimiento e ingeniería generativa autónoma diseñada para explorar, optimizar y validar diseños físicos complejos mediante modelos analíticos rápidos, simulaciones híbridas y algoritmos genéticos multi-objetivo (NSGA-II).
+Plataforma modular de ingeniería generativa y diseño quirúrgico personalizado (*Point-of-Care*) diseñada para generar, validar y empaquetar piezas e instrumental médico a medida sobre hardware convencional, combinando geometría booleana conformal (`manifold3d`), visión morfológica 3D y optimización evolutiva multi-objetivo (NSGA-II).
 
 ---
 
-## 📸 Capturas de la Plataforma
+## 🩺 Módulo Principal: Laboratorio Quirúrgico PSI (Traumatología de Rodilla)
+
+Diseño determinista submilimétrico de **Guías de Corte Específicas de Paciente (PSI)** para artroplastia de rodilla (Fémur Distal *Zero-Rocking* y Tibia Proximal con *Slope* ajustable), cumpliendo con los requisitos de trazabilidad del reglamento **MDR 2017/745 Anexo XIII**.
+
+### 1. Visor 3D en Modo Ensamblaje (*Ghost Bone* + Vaciado Conformal)
+Sustracción booleana 3D directa contra el TAC del paciente (con holgura cortical de periostio de $0.15\text{ mm}$), ranura pasante orientada al ángulo de corte y túneles para agujas Kirschner de $3.2\text{ mm}$:
+
+![Ensamblaje Quirúrgico PSI Fémur Distal](docs/screenshots/06_psi_femur_ghost_bone_3d.jpg)
+
+### 2. Ingesta Tomográfica Multi-Archivo y Visión Morfológica 3D
+Clasificación intrínseca automática (Fémur vs Tibia, Derecha vs Izquierda, independiente del nombre de archivo), soporte multi-archivo y **partición automática de TACs compuestos** de rodilla completa:
+
+![Ingesta Tomográfica del Paciente](docs/screenshots/07_psi_tomographic_ingestion.png)
+
+### 3. Expediente Bilateral (4 Slots MDR) y Empaquetado Quirúrgico (ZIP 3D)
+Control anti-error de integridad anatómica (bloqueo de duplicados del mismo hueso/lado y alertas de asimetría bilateral) + descarga en 1 clic de todos los STLs listos para impresora MSLA junto con el informe `INSPECCION_Y_TRAZABILIDAD_MDR.txt`:
+
+| Expediente Bilateral del Paciente | Control de Calidad y Exportación MDR |
+|:---:|:---:|
+| ![Expediente Bilateral](docs/screenshots/08_psi_patient_dossier_bilateral.png) | ![Control de Calidad MDR](docs/screenshots/09_psi_mdr_quality_control.png) |
+
+### 4. Desglose Clínico y Validación Biomecánica en Tiempo Real
+Cálculo estructural instantáneo de deflexión bajo empuje de sierra ($< 0.10\text{ mm}$ a $40\text{ N}$ / $15.000\text{ CPM}$), margen frente a resonancia, estabilidad isostática y coste de resina biocompatible ISO 10993:
+
+![Desglose Biomecánico PSI](docs/screenshots/10_psi_biomechanical_breakdown.png)
+
+---
+
+## 🌬️ Segundo Dominio: Laboratorio Eólico Multiescala (NSGA-II)
 
 ### 1. Comparativa Multi-Arquitectura y Banco de Tops
 Matriz de decisión multicriterio y modo duelo directo "Versus (A vs B)" contrastando los mejores diseños guardados (*Savonius VAWT* vs *HAWT Clásico* vs *Turbina Esférica*):
@@ -28,9 +56,9 @@ Visualización WebGL (Three.js) con cotas físicas reales ($D$, $H$, $A$, masa) 
 ## 🚀 Características Principales
 
 - **Arquitectura Desacoplada (`EngineeringModule`):** El núcleo de simulación, la cola de jobs y la base de datos son completamente agnósticos al dominio físico.
+- **Amoldado Anatómico Conformal (`manifold3d` + `trimesh`):** Operaciones booleanas estancas (*watertight*) en milisegundos, grabado 3D indeleble en la propia pieza y exportación directa en `.stl`, `.glb` y packs `.zip`.
 - **Optimización Evolutiva Multi-Objetivo:** Algoritmo genético NSGA-II con muestreo Latin Hypercube (LHS), cruce SBX, mutación polinomial y exploración libre con semilla dinámica.
-- **Pipeline Geométrico Robusto:** Generación procedural de mallas con Trimesh, verificación de estanqueidad (manifold/watertight), persistencia indexada por hash SHA-256 y exportación en formato `.stl` y `.glb`.
-- **Visor 3D Interactivo (Three.js):** Controles orbitales, modo alámbrico/sólido, rotación automática, referencia humana de $1.75\text{ m}$ y HUD con dimensiones reales.
+- **Visor 3D Interactivo (Three.js):** Modo ensamblaje (*Ghost Bone*), controles orbitales, modo alámbrico/sólido, rotación automática y HUD con dimensiones reales.
 - **Base de Datos Persistente con Tolerancia a Fallos:** SQLite 2.0 en modo WAL (`journal_mode=WAL`) con cola de tareas persistente y recuperación automática de jobs huérfanos tras caídas.
 - **Diseñado para Hardware Convencional:** Eficiente en CPU estándar (ej. Intel Core i5, 8 GB RAM, gráficos integrados) sin requerir GPU dedicada ni CUDA obligatorio.
 
@@ -40,8 +68,8 @@ Visualización WebGL (Three.js) con cotas físicas reales ($D$, $H$, $A$, masa) 
 
 - `backend/`: API REST en FastAPI, motor de experimentos, optimización evolutiva y cola de workers.
 - `frontend/`: Interfaz de usuario reactiva en React 19, TypeScript, Vite y Three.js.
-- `modules/`: Módulos de física e ingeniería conectables (`wind_turbines`, `test_module`).
-- `storage/`: Almacén de geometrías pesadas (STL/GLB) indexadas por hash y base de datos SQLite WAL.
+- `modules/`: Módulos de ingeniería conectables (`traumatology_psi`, `wind_turbines`, `test_module`).
+- `storage/`: Almacén de geometrías (STL/GLB) y TACs indexados por hash SHA-256 y base de datos SQLite WAL.
 - `docs/`: Documentación técnica de arquitectura, dependencias, simulación y capturas de pantalla (`docs/screenshots/`).
 - `tests/`: Batería de pruebas automatizadas con `pytest`.
 
