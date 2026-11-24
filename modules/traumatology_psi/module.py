@@ -490,14 +490,14 @@ class TraumatologyPsiModule(EngineeringModule):
             hole_l.apply_translation([ep_cx - pin_spread / 2.0, ep_ymin - block_depth * 0.45, tower_h / 2.0])
             subtraction_parts.extend([hole_m, hole_l])
 
-            # Chaflanes ergonómicos en las esquinas anteriores
-            ch_box1 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            # Chaflanes ergonómicos en las esquinas anteriores (sin invadir los túneles de agujas)
+            ch_box1 = trimesh.creation.box(extents=[10.0, 10.0, block_height * 1.5])
             ch_box1.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
-            ch_box1.apply_translation([ep_cx + ant_w / 2.0, ep_ymin - block_depth * 0.9, block_height / 2.0])
+            ch_box1.apply_translation([ep_cx + ant_w / 2.0 + 2.5, ep_ymin - block_depth * 0.95, block_height / 2.0])
 
-            ch_box2 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            ch_box2 = trimesh.creation.box(extents=[10.0, 10.0, block_height * 1.5])
             ch_box2.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
-            ch_box2.apply_translation([ep_cx - ant_w / 2.0, ep_ymin - block_depth * 0.9, block_height / 2.0])
+            ch_box2.apply_translation([ep_cx - ant_w / 2.0 - 2.5, ep_ymin - block_depth * 0.95, block_height / 2.0])
             subtraction_parts.extend([ch_box1, ch_box2])
 
             # Ventana central de comprobación de contacto óseo (Bone-Check Window)
@@ -564,14 +564,14 @@ class TraumatologyPsiModule(EngineeringModule):
             hole_l.apply_translation([ep_cx - pin_spread / 2.0, ep_ymin - block_depth * 0.45, tower_h / 2.0])
             subtraction_parts.extend([hole_m, hole_l])
 
-            # Chaflanes ergonómicos en las esquinas anteriores
-            ch_box1 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            # Chaflanes ergonómicos en las esquinas anteriores (sin invadir los túneles de agujas)
+            ch_box1 = trimesh.creation.box(extents=[10.0, 10.0, block_height * 1.5])
             ch_box1.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
-            ch_box1.apply_translation([ep_cx + ant_w / 2.0, ep_ymin - block_depth * 0.9, block_height / 2.0])
+            ch_box1.apply_translation([ep_cx + ant_w / 2.0 + 2.5, ep_ymin - block_depth * 0.95, block_height / 2.0])
 
-            ch_box2 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            ch_box2 = trimesh.creation.box(extents=[10.0, 10.0, block_height * 1.5])
             ch_box2.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
-            ch_box2.apply_translation([ep_cx - ant_w / 2.0, ep_ymin - block_depth * 0.9, block_height / 2.0])
+            ch_box2.apply_translation([ep_cx - ant_w / 2.0 - 2.5, ep_ymin - block_depth * 0.95, block_height / 2.0])
             subtraction_parts.extend([ch_box1, ch_box2])
 
             # Ventana de inspección cortical anterior
@@ -625,7 +625,7 @@ class TraumatologyPsiModule(EngineeringModule):
             combined.apply_translation([0.0, 0.0, -min_z])
 
         # Guardar en almacenamiento inmutable SHA-256 (incluye versión del generador conformal para evitar caché antigua)
-        geom_hash = hashlib.sha256(f"v0.3.1-conformal:{family_id}:{sorted(parameters.items())}".encode("utf-8")).hexdigest()
+        geom_hash = hashlib.sha256(f"v0.3.2-conformal:{family_id}:{sorted(parameters.items())}".encode("utf-8")).hexdigest()
         props = GeometryService.process_and_persist_mesh(combined, geom_hash)
 
         return GeometryOutput(

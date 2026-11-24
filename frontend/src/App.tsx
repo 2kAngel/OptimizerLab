@@ -305,13 +305,21 @@ export default function App() {
     const projId = targetProjectId || selectedProjectId
     setSelectedFamilyId(familyId)
     setPrescribedLaterality(laterality)
+    const isTibia = familyId === 'proximal_tibia_cutting_guide'
+    // Evitar mostrar una guía de tibia sobre un fémur (o viceversa) al cambiar de hueso
+    const matchingCand = candidates.find((c) => {
+      const candIsTibia = c.parameters?.tibia_plateau_width !== undefined || c.parameters?.posterior_slope !== undefined
+      const candLat = c.parameters?.prescribed_laterality
+      return candIsTibia === isTibia && (!candLat || candLat === laterality)
+    })
+    setSelectedCandidate(matchingCand || null)
+
     if (!projId) return
     const dossier = patientDossiers[projId]
     if (!dossier) {
       setPatientScan(null)
       return
     }
-    const isTibia = familyId === 'proximal_tibia_cutting_guide'
     const isRight = laterality === 'right'
     const scan = isTibia ? (isRight ? dossier.tibiaRight : dossier.tibiaLeft) : (isRight ? dossier.femurRight : dossier.femurLeft)
     if (scan) {
