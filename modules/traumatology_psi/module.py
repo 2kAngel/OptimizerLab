@@ -12,6 +12,7 @@ import numpy as np
 import trimesh
 from typing import Any, List, Tuple
 from backend.core.geometry.service import GeometryService
+from modules.traumatology_psi.bone_service import BoneAnatomyService
 from backend.core.module_registry.base import EngineeringModule
 from backend.core.module_registry.models import (
     ModuleMetadata,
@@ -368,7 +369,7 @@ class TraumatologyPsiModule(EngineeringModule):
         return trimesh.util.concatenate(boxes)
 
     def generate_geometry(self, family_id: str, parameters: dict[str, Any]) -> GeometryOutput:
-        """Genera el modelo tridimensional paramétrico e higiénico de la guía PSI."""
+        """Genera el modelo tridimensional paramétrico, higiénico y amoldado (conformal) de la guía PSI."""
         w_ml = float(parameters.get("femur_width_ml", parameters.get("tibia_plateau_width", 72.0)))
         d_ap = float(parameters.get("femur_depth_ap", 62.0))
         valgus = float(parameters.get("valgus_angle", 5.5))
@@ -379,149 +380,208 @@ class TraumatologyPsiModule(EngineeringModule):
         wall_th = float(parameters.get("wall_thickness", 3.5))
         rib_count = int(parameters.get("rib_count", 4))
         rib_th = float(parameters.get("rib_thickness", 2.5))
+        cortical_offset = float(parameters.get("cortical_offset", 0.15))
 
-        meshes = []
+        # Cargar malla ósea del paciente para amoldado conformal exacto (o modelo anatómico de referencia)
+        scan_id = parameters.get("scan_id")
+        bone_mesh = None
+        if scan_id:
+            clean_id = str(scan_id).strip()
+            scan_path = BoneAnatomyService.STORAGE_DIR / f"{clean_id}.stl"
+            if scan_path.exists():
+                try:
+                    bone_mesh = trimesh.load(str(scan_path))
+                    if isinstance(bone_mesh, trimesh.Scene):
+                        bone_mesh = trimesh.util.concatenate(bone_mesh.dump())
+                except Exception:
+                    bone_mesh = None
+
+        is_right = parameters.get("prescribed_laterality", "right") == "right"
+        if bone_mesh is None or not hasattr(bone_mesh, "vertices") or len(bone_mesh.vertices) == 0:
+            if family_id == "distal_femur_cutting_guide":
+                bone_mesh = BoneAnatomyService.create_reference_distal_femur(width_ml=w_ml, depth_ap=d_ap, is_right=is_right)
+            else:
+                bone_mesh = BoneAnatomyService.create_reference_proximal_tibia(width_ml=w_ml, is_right=is_right)
+
+        # Alinear hueso con el marco de coordenadas de la guía
+        b_box = bone_mesh.bounds
+        b_center = b_box.mean(axis=0)
+        bone_aligned = bone_mesh.copy()
 
         if family_id == "distal_femur_cutting_guide":
-            # --- 1. BLOQUE PRINCIPAL DE CORTE CON RANURA ORIENTADA (VALGO) ---
-            block_width = w_ml * 0.88
-            block_height = 22.0
-            block_depth = 26.0
+            # Cóndilos distales (min.z en orientación estándar) colocados en asiento condilar Z = 3.0 mm
+            bone_aligned.apply_translation([-b_center[0], -b_center[1], -(b_box[0][2] - 3.0)])
+        else:
+            # Platillo tibial proximal colocado en asiento articular Z = 4.0 mm
+            z_len = b_box[1][2] - b_box[0][2]
+            top_pts = bone_mesh.vertices[bone_mesh.vertices[:, 2] > (b_box[1][2] - 0.15 * z_len)]
+            bot_pts = bone_mesh.vertices[bone_mesh.vertices[:, 2] < (b_box[0][2] + 0.15 * z_len)]
+            top_area = np.ptp(top_pts[:, 0]) * np.ptp(top_pts[:, 1]) if len(top_pts) else 0
+            bot_area = np.ptp(bot_pts[:, 0]) * np.ptp(bot_pts[:, 1]) if len(bot_pts) else 0
+            if top_area >= bot_area:
+                bone_aligned.apply_translation([-b_center[0], -b_center[1], -(b_box[1][2] - 4.0)])
+            else:
+                bone_aligned.apply_translation([-b_center[0], -b_center[1], -(b_box[0][2] - 4.0)])
 
-            # Bloque base del slot
+        solid_parts = []
+        subtraction_parts = []
+        block_height = 22.0
+        block_depth = 24.0
+
+        if family_id == "distal_femur_cutting_guide":
+            # --- 1. GUÍA FEMORAL DISTAL CON RANURA DE VALGO Y AMOLDADO CONDILAR ---
+            block_width = w_ml * 0.88
             block = trimesh.creation.box(extents=[block_width, block_depth, block_height])
             block.apply_translation([0.0, -block_depth / 2.0, block_height / 2.0])
 
-            # Ranura para hoja de sierra (Saw Slot)
-            # Ranura con holgura de 0.1 mm para deslizamiento suave sin juego
-            slot_h = blade_th + 0.12
-            slot_w = block_width * 0.85
-            slot_d = block_depth * 1.2
+            # Ranura pasante para hoja de sierra (Saw Slot) con holgura funcional
+            slot_h = blade_th + 0.15
+            slot_w = block_width * 0.90
+            slot_d = block_depth * 1.6
             slot = trimesh.creation.box(extents=[slot_w, slot_d, slot_h])
-            # Posición de la ranura a la altura exacta de la resección distal
             slot.apply_translation([0.0, -block_depth / 2.0, block_height * 0.5])
-
-            # Aplicar ángulo de valgo girando el bloque respecto al eje AP
             valgus_rad = math.radians(valgus)
             rot_valgus = trimesh.transformations.rotation_matrix(valgus_rad, [0, 1, 0])
-            block.apply_transform(rot_valgus)
             slot.apply_transform(rot_valgus)
+            subtraction_parts.append(slot)
 
-            # Resta aproximada o visualización de ranura
-            meshes.append(block)
+            # Cuna anatómica condilar que abraza los cóndilos
+            cradle = trimesh.creation.cylinder(radius=w_ml * 0.42, height=wall_th * 3.0, sections=36)
+            cradle.apply_scale([1.0, 0.75, 1.0])
+            cradle.apply_translation([0.0, d_ap * 0.32, 6.0])
 
-            # --- 2. CUNA ANATÓMICA Y ARCO CONDILAR TIPO PUZZLE ("ZERO-ROCKING") ---
-            # Arco envolvente continuo que abraza los cóndilos femorales con ventana de inspección
-            condyle_span = w_ml * 0.44
-            bridge_th = wall_th * 1.2
-            bridge_w = w_ml * 0.82
-            bridge_d = d_ap * 0.55
-
-            # Arco anatómico principal curvado
-            arch_bridge = trimesh.creation.cylinder(radius=bridge_w / 2.0, height=bridge_th, sections=32)
-            arch_bridge.apply_scale([1.0, 0.75, 1.0])
-            arch_bridge.apply_translation([0.0, d_ap * 0.35, block_height * 0.4])
-
-            # Ventana de inspección ósea central (Bone-Check Window) para verificar contacto
-            window_r = w_ml * 0.16
-            window = trimesh.creation.cylinder(radius=window_r, height=bridge_th * 1.5, sections=20)
-            window.apply_translation([0.0, d_ap * 0.35, block_height * 0.4])
-
-            # Apoyos condilares anatómicos moldeados en cóndilos medial y lateral
-            condyle_radius = w_ml * 0.20
-            pad_medial = trimesh.creation.icosphere(radius=condyle_radius, subdivisions=3)
-            pad_medial.apply_scale([0.85, 1.25, 0.65])
-            pad_medial.apply_translation([condyle_span / 2.0, d_ap * 0.28, 4.0])
-
-            pad_lateral = trimesh.creation.icosphere(radius=condyle_radius * 0.92, subdivisions=3)
-            pad_lateral.apply_scale([0.80, 1.15, 0.60])
-            pad_lateral.apply_translation([-condyle_span / 2.0, d_ap * 0.28, 4.0])
-
-            # Gancho de tope troclear anterior (tercer punto isostático de auto-fijación)
-            hook_anterior = trimesh.creation.box(extents=[w_ml * 0.35, wall_th * 2.0, block_height * 0.7])
-            hook_anterior.apply_translation([0.0, d_ap * 0.62, block_height * 0.5])
-
-            meshes.extend([arch_bridge, pad_medial, pad_lateral, hook_anterior])
-
-            # --- 3. TORRES DE FIJACIÓN DE AGUJAS KIRSCHNER DIVERGENTES ---
+            # Torres de fijación para agujas Kirschner divergentes
             tower_outer_r = (pin_d / 2.0) + wall_th * 0.8
             tower_h = block_height * 1.15
 
-            # Aguja 1 (Medial)
             pin_tower_m = trimesh.creation.cylinder(radius=tower_outer_r, height=tower_h)
-            # Divergencia de 5° para auto-bloqueo óseo
             rot_div_m = trimesh.transformations.rotation_matrix(math.radians(-4.0), [0, 1, 0])
             pin_tower_m.apply_transform(rot_div_m)
             pin_tower_m.apply_translation([pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
 
-            # Aguja 2 (Lateral)
             pin_tower_l = trimesh.creation.cylinder(radius=tower_outer_r, height=tower_h)
             rot_div_l = trimesh.transformations.rotation_matrix(math.radians(4.0), [0, 1, 0])
             pin_tower_l.apply_transform(rot_div_l)
             pin_tower_l.apply_translation([-pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
 
-            meshes.extend([pin_tower_m, pin_tower_l])
+            # Orificios pasantes de 3.2 mm para las agujas
+            hole_m = trimesh.creation.cylinder(radius=pin_d / 2.0, height=tower_h * 1.5)
+            hole_m.apply_transform(rot_div_m)
+            hole_m.apply_translation([pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
 
-            # --- 4. NERVADURAS TRIANGULARES DE REFUERZO ANTI-DEFLEXIÓN ---
-            # Distribuidas simétricamente a lo largo del vano para absorber el empuje de la sierra
+            hole_l = trimesh.creation.cylinder(radius=pin_d / 2.0, height=tower_h * 1.5)
+            hole_l.apply_transform(rot_div_l)
+            hole_l.apply_translation([-pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
+            subtraction_parts.extend([hole_m, hole_l])
+
+            # Chaflanes ergonómicos en las esquinas laterales para evitar aristas cuadradas
+            ch_box1 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            ch_box1.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
+            ch_box1.apply_translation([block_width / 2.0, -block_depth, block_height / 2.0])
+
+            ch_box2 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            ch_box2.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
+            ch_box2.apply_translation([-block_width / 2.0, -block_depth, block_height / 2.0])
+            subtraction_parts.extend([ch_box1, ch_box2])
+
+            # Ventana central de comprobación de contacto óseo (Bone-Check Window)
+            window = trimesh.creation.cylinder(radius=w_ml * 0.16, height=35.0, sections=24)
+            window.apply_translation([0.0, d_ap * 0.32, 6.0])
+            subtraction_parts.append(window)
+
+            # Nervaduras de refuerzo estructural anti-deflexión
+            ribs = []
             rib_spacing = (block_width * 0.75) / max(1, rib_count - 1)
             start_x = -(block_width * 0.75) / 2.0
-
             for i in range(rib_count):
                 rx = start_x + i * rib_spacing
-                rib_w = rib_th
-                rib_d = block_depth * 0.85
-                rib_h = block_height * 0.95
-
-                rib = trimesh.creation.box(extents=[rib_w, rib_d, rib_h])
-                # Rotación en bisel a 40° para formar un contrafuerte diagonal
+                rib = trimesh.creation.box(extents=[rib_th, block_depth * 0.85, block_height * 0.95])
                 rot_rib = trimesh.transformations.rotation_matrix(math.radians(35.0), [1, 0, 0])
                 rib.apply_transform(rot_rib)
                 rib.apply_translation([rx, -block_depth * 0.25, block_height * 0.5])
-                meshes.append(rib)
+                ribs.append(rib)
 
-        elif family_id == "proximal_tibia_cutting_guide":
-            # --- GUÍA TIBIAL PROXIMAL CON SLOPE POSTERIOR ---
+            solid_parts = [block, pin_tower_m, pin_tower_l, cradle] + ribs
+
+        else:
+            # --- 2. GUÍA TIBIAL PROXIMAL CON SLOPE POSTERIOR Y AMOLDADO A MESETA TIBIAL ---
             plateau_w = w_ml
             block_width = plateau_w * 0.85
             block_height = 20.0
-            block_depth = 24.0
+            block_depth = 22.0
 
-            tibia_block = trimesh.creation.box(extents=[block_width, block_depth, block_height])
-            tibia_block.apply_translation([0.0, -block_depth / 2.0, block_height / 2.0])
+            block = trimesh.creation.box(extents=[block_width, block_depth, block_height])
+            block.apply_translation([0.0, -block_depth / 2.0, block_height / 2.0])
 
-            # Slope posterior
+            # Ranura pasante para hoja de sierra con Slope Posterior
             slope = float(parameters.get("posterior_slope", 3.0))
+            slot_h = blade_th + 0.15
+            slot_w = block_width * 0.90
+            slot_d = block_depth * 1.6
+            slot = trimesh.creation.box(extents=[slot_w, slot_d, slot_h])
+            slot.apply_translation([0.0, -block_depth / 2.0, block_height * 0.5])
             rot_slope = trimesh.transformations.rotation_matrix(math.radians(-slope), [1, 0, 0])
-            tibia_block.apply_transform(rot_slope)
-            meshes.append(tibia_block)
+            slot.apply_transform(rot_slope)
+            subtraction_parts.append(slot)
 
-            # Apoyos anatómicos anteriores que abrazan el reborde anterior de la meseta tibial
-            arch_tibia = trimesh.creation.cylinder(radius=plateau_w * 0.42, height=wall_th * 1.5, sections=28)
-            arch_tibia.apply_scale([1.0, 0.65, 1.0])
-            arch_tibia.apply_translation([0.0, plateau_w * 0.28, 4.0])
+            # Cuna anatómica que abraza el reborde anterior de la meseta tibial
+            cradle = trimesh.creation.cylinder(radius=plateau_w * 0.40, height=wall_th * 3.0, sections=36)
+            cradle.apply_scale([1.0, 0.65, 1.0])
+            cradle.apply_translation([0.0, plateau_w * 0.22, 6.0])
 
-            # Torres para agujas de fijación Kirschner tibiales (frontales)
-            tower_r = (pin_d / 2.0) + wall_th * 0.8
-            tower_tib_m = trimesh.creation.cylinder(radius=tower_r, height=block_height * 1.1)
-            tower_tib_m.apply_translation([plateau_w * 0.25, -block_depth * 0.45, block_height * 0.5])
+            # Torres para agujas de fijación Kirschner tibiales
+            tower_outer_r = (pin_d / 2.0) + wall_th * 0.8
+            tower_h = block_height * 1.15
 
-            tower_tib_l = trimesh.creation.cylinder(radius=tower_r, height=block_height * 1.1)
-            tower_tib_l.apply_translation([-plateau_w * 0.25, -block_depth * 0.45, block_height * 0.5])
+            pin_tower_m = trimesh.creation.cylinder(radius=tower_outer_r, height=tower_h)
+            pin_tower_m.apply_translation([pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
 
-            # Apoyos condilares en platillos
-            pad_ant_m = trimesh.creation.box(extents=[plateau_w * 0.24, 16.0, 8.0])
-            pad_ant_m.apply_translation([plateau_w * 0.28, 8.0, 4.0])
-            pad_ant_l = trimesh.creation.box(extents=[plateau_w * 0.24, 16.0, 8.0])
-            pad_ant_l.apply_translation([-plateau_w * 0.28, 8.0, 4.0])
-            meshes.extend([arch_tibia, tower_tib_m, tower_tib_l, pad_ant_m, pad_ant_l])
+            pin_tower_l = trimesh.creation.cylinder(radius=tower_outer_r, height=tower_h)
+            pin_tower_l.apply_translation([-pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
+
+            # Orificios pasantes para agujas
+            hole_m = trimesh.creation.cylinder(radius=pin_d / 2.0, height=tower_h * 1.5)
+            hole_m.apply_translation([pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
+
+            hole_l = trimesh.creation.cylinder(radius=pin_d / 2.0, height=tower_h * 1.5)
+            hole_l.apply_translation([-pin_spread / 2.0, -block_depth * 0.4, tower_h / 2.0])
+            subtraction_parts.extend([hole_m, hole_l])
+
+            # Chaflanes ergonómicos en las esquinas laterales
+            ch_box1 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            ch_box1.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
+            ch_box1.apply_translation([block_width / 2.0, -block_depth, block_height / 2.0])
+
+            ch_box2 = trimesh.creation.box(extents=[14.0, 14.0, block_height * 1.5])
+            ch_box2.apply_transform(trimesh.transformations.rotation_matrix(math.radians(45.0), [0, 0, 1]))
+            ch_box2.apply_translation([-block_width / 2.0, -block_depth, block_height / 2.0])
+            subtraction_parts.extend([ch_box1, ch_box2])
+
+            # Ventana de inspección cortical anterior
+            window = trimesh.creation.cylinder(radius=plateau_w * 0.14, height=35.0, sections=24)
+            window.apply_translation([0.0, plateau_w * 0.22, 6.0])
+            subtraction_parts.append(window)
 
             # Nervaduras tibiales
+            ribs = []
             for i in range(rib_count):
                 rx = -block_width * 0.35 + i * (block_width * 0.7 / max(1, rib_count - 1))
                 rib = trimesh.creation.box(extents=[rib_th, block_depth * 0.7, block_height * 0.8])
                 rib.apply_translation([rx, -block_depth * 0.3, block_height * 0.4])
-                meshes.append(rib)
+                ribs.append(rib)
+
+            solid_parts = [block, pin_tower_m, pin_tower_l, cradle] + ribs
+
+        # Sustracción booleana conformal del hueso del paciente (Vaciado Negativo "Puzzle Match")
+        subtraction_parts.append(bone_aligned)
+
+        try:
+            solids_fused = trimesh.boolean.union(solid_parts, engine="manifold")
+            molded_guide = trimesh.boolean.difference([solids_fused] + subtraction_parts, engine="manifold")
+            if not molded_guide.is_watertight or len(molded_guide.faces) == 0:
+                molded_guide = solids_fused
+        except Exception:
+            molded_guide = trimesh.util.concatenate(solid_parts)
 
         # Grabado en relieve 3D indeleble en la propia pieza (Blindaje Anti-Confusión en Quirófano)
         patient_code = str(parameters.get("patient_id", "P1")).replace("PACIENTE-", "P").replace("Paciente ", "P")[:5]
@@ -529,18 +589,14 @@ class TraumatologyPsiModule(EngineeringModule):
 
         if family_id == "distal_femur_cutting_guide":
             tag_str = f"{patient_code}-{lat_code}-FEM-{valgus:.1f}V"
-            tag_mesh = self._create_embossed_tag(tag_str)
-            tag_mesh.apply_translation([0.0, -block_depth * 0.45, block_height])
-            meshes.append(tag_mesh)
-        elif family_id == "proximal_tibia_cutting_guide":
+        else:
             slope = float(parameters.get("posterior_slope", 3.0))
             tag_str = f"{patient_code}-{lat_code}-TIB-{slope:.1f}S"
-            tag_mesh = self._create_embossed_tag(tag_str)
-            tag_mesh.apply_translation([0.0, -block_depth * 0.45, block_height])
-            meshes.append(tag_mesh)
 
-        # Concatenar todos los elementos en una malla sólida unificada
-        combined = trimesh.util.concatenate(meshes)
+        tag_mesh = self._create_embossed_tag(tag_str)
+        tag_mesh.apply_translation([0.0, -block_depth * 0.45, block_height])
+
+        combined = trimesh.util.concatenate([molded_guide, tag_mesh])
 
         # Centrar en la base para visualización cómoda en 3D
         bounds = combined.bounding_box.bounds
